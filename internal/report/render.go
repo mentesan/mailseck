@@ -7,12 +7,20 @@ import (
 	"os"
 )
 
-// ANSI background colors used to badge each severity level in RenderText.
+// ANSI foreground colors used to badge each severity level in
+// RenderText. Foreground (not background) color was chosen deliberately:
+// a background color's actual legibility depends on the terminal's
+// color palette and the default foreground it pairs with, which varies
+// per theme -- a background that reads fine on one terminal can turn
+// into pale text on a matching-brightness background on another (e.g.
+// white-on-yellow or white-on-blue on a dark theme). Colored, bold
+// foreground text against whatever background the terminal already
+// uses does not have that failure mode.
 const (
 	ansiReset  = "\033[0m"
-	ansiInfoBG = "\033[44m" // blue
-	ansiWarnBG = "\033[43m" // yellow
-	ansiCritBG = "\033[41m" // red
+	ansiInfoFG = "\033[36m"   // cyan
+	ansiWarnFG = "\033[1;33m" // bold yellow
+	ansiCritFG = "\033[1;31m" // bold red
 )
 
 // RenderText writes report to w as human-readable text: a domain header
@@ -72,26 +80,26 @@ func isTerminal(w io.Writer) bool {
 }
 
 // severityBadge returns a fixed-width "[CRIT]"/"[WARN]"/"[INFO]" label,
-// wrapped in an ANSI background color when useColor is true.
+// wrapped in an ANSI foreground color when useColor is true.
 func severityBadge(severity Severity, useColor bool) string {
-	label, bg := severityLabelAndColor(severity)
+	label, fg := severityLabelAndColor(severity)
 	if !useColor {
 		return label
 	}
-	return bg + label + ansiReset
+	return fg + label + ansiReset
 }
 
 // severityLabelAndColor maps a Severity to its display label and ANSI
-// background color. An unrecognized Severity value is treated as Info,
+// foreground color. An unrecognized Severity value is treated as Info,
 // so a malformed Finding still renders instead of panicking.
-func severityLabelAndColor(severity Severity) (label, background string) {
+func severityLabelAndColor(severity Severity) (label, foreground string) {
 	switch severity {
 	case Crit:
-		return "[CRIT]", ansiCritBG
+		return "[CRIT]", ansiCritFG
 	case Warn:
-		return "[WARN]", ansiWarnBG
+		return "[WARN]", ansiWarnFG
 	default:
-		return "[INFO]", ansiInfoBG
+		return "[INFO]", ansiInfoFG
 	}
 }
 
