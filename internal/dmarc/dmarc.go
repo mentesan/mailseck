@@ -38,3 +38,16 @@ type DMARCResult struct {
 	// order published.
 	RUF []string
 }
+
+// EffectiveSubdomainPolicy returns the policy that actually applies to
+// subdomains: SubdomainPolicy if the domain published an "sp" tag, or
+// Policy otherwise, per RFC 7489 §6.3's inheritance rule. Use this
+// instead of reading SubdomainPolicy directly whenever the question is
+// "what happens to mail from a subdomain", rather than "what did this
+// domain literally publish".
+func (r *DMARCResult) EffectiveSubdomainPolicy() string {
+	if r.SubdomainPolicy != "" {
+		return r.SubdomainPolicy
+	}
+	return r.Policy
+}
