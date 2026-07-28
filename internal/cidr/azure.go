@@ -57,7 +57,13 @@ type azureServiceTagsJSON struct {
 
 // Fetch returns Azure's current set of publicly-registrable IP prefixes,
 // covering both IPv4 and IPv6, aggregated across every "AzureCloud" and
-// "AzureCloud.<region>" entry.
+// "AzureCloud.<region>" entry and deduplicated: Microsoft's own
+// ServiceTags document lists every region's prefixes twice, once under
+// its own "AzureCloud.<region>" tag and again under the umbrella
+// "AzureCloud" tag, which is a superset of all regions combined. Without
+// deduplication, roughly half of the returned prefixes would be exact
+// repeats of another entry -- which also meant the same overlap could be
+// reported more than once against a single SPF-permitted range.
 func (p *azureProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 	jsonURL, err := p.resolveServiceTagsURL(ctx)
 	if err != nil {
@@ -84,6 +90,7 @@ func (p *azureProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 		return nil, fmt.Errorf("azure: decode response: %w", err)
 	}
 
+	seen := make(map[netip.Prefix]bool)
 	var prefixes []netip.Prefix
 	for _, value := range doc.Values {
 		if !strings.Contains(value.Name, "AzureCloud") {
@@ -94,6 +101,10 @@ func (p *azureProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 			if err != nil {
 				return nil, fmt.Errorf("azure: parse prefix %q: %w", raw, err)
 			}
+			if seen[prefix] {
+				continue
+			}
+			seen[prefix] = true
 			prefixes = append(prefixes, prefix)
 		}
 	}

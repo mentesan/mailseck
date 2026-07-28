@@ -22,9 +22,14 @@ func TestAzureProviderFetch(t *testing.T) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"values": []map[string]any{
 				{
+					// Real ServiceTags documents list every region's
+					// prefixes again under the umbrella "AzureCloud" tag,
+					// so 13.104.0.0/14 here duplicates the one under
+					// "AzureCloud.eastus" below -- exactly the pattern
+					// that must be deduplicated.
 					"name": "AzureCloud",
 					"properties": map[string]any{
-						"addressPrefixes": []string{"13.64.0.0/11", "2603:1000::/24"},
+						"addressPrefixes": []string{"13.64.0.0/11", "2603:1000::/24", "13.104.0.0/14"},
 					},
 				},
 				{
@@ -51,7 +56,7 @@ func TestAzureProviderFetch(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			name:        "success aggregates AzureCloud entries across families",
+			name:        "success aggregates AzureCloud entries across families and dedupes",
 			jsonHandler: validJSON,
 			want: []netip.Prefix{
 				netip.MustParsePrefix("13.64.0.0/11"),
