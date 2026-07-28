@@ -5,6 +5,7 @@ package cidr
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/netip"
 )
 
@@ -23,9 +24,42 @@ type CIDRProvider interface {
 // ProviderList is an ordered set of CIDR providers to query together.
 type ProviderList []CIDRProvider
 
-// Load fetches and merges IP prefixes from every provider in providers. A
-// single provider's failure is not meant to abort the others; the error
-// return is reserved for conditions that leave no usable result at all.
-func Load(ctx context.Context, providers ProviderList) ([]netip.Prefix, error) {
-	return nil, errors.New("cidr: Load not implemented")
+// providerResult carries one provider's outcome back from its goroutine in
+// Load.
+type providerResult struct {
+	name     string
+	prefixes []netip.Prefix
+	err      error
+}
+
+// Load fetches IP prefixes from every provider in providers concurrently,
+// keyed by provider name. A provider that fails is logged as a warning and
+// simply contributes no prefixes; Load only returns an error when every
+// provider failed, leaving no usable result at all.
+func Load(ctx context.Context, providers ProviderList) (map[string][]netip.Prefix, error) {
+	results := make(chan providerResult, len(providers))
+	for _, provider := range providers {
+		go func(provider CIDRProvider) {
+			prefixes, err := provider.Fetch(ctx)
+			results <- providerResult{name: provider.Name(), prefixes: prefixes, err: err}
+		}(provider)
+	}
+
+	byProvider := make(map[string][]netip.Prefix, len(providers))
+	failed := 0
+	for range providers {
+		r := <-results
+		if r.err != nil {
+			slog.Warn("cidr: provider fetch failed", "provider", r.name, "error", r.err)
+			failed++
+			continue
+		}
+		byProvider[r.name] = r.prefixes
+	}
+
+	if len(providers) > 0 && failed == len(providers) {
+		return nil, errors.New("cidr: all providers failed")
+	}
+
+	return byProvider, nil
 }
