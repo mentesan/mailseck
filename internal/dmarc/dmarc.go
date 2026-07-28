@@ -10,33 +10,33 @@ type DMARCResult struct {
 	// matching record and when the DNS lookup itself failed, since the
 	// overwhelming majority of domains signal "no DMARC" precisely by
 	// not publishing that subdomain at all.
-	IsPresent bool
+	IsPresent bool `json:"is_present"`
 
 	// RawRecord is the matched DMARC TXT record, as published.
-	RawRecord string
+	RawRecord string `json:"raw_record"`
 
 	// Policy is the literal value of the "p" tag (e.g. "reject",
 	// "quarantine", or "none").
-	Policy string
+	Policy string `json:"policy"`
 
 	// SubdomainPolicy is the literal value of the "sp" tag, or empty if
 	// the tag is absent. Per RFC 7489, an absent "sp" means subdomains
 	// inherit Policy; this field reports only what was actually
 	// published, leaving that inheritance decision to the caller.
-	SubdomainPolicy string
+	SubdomainPolicy string `json:"subdomain_policy"`
 
 	// Percentage is the value of the "pct" tag: the percentage of
 	// messages subjected to the policy. It defaults to 100, per RFC
 	// 7489 §6.3, when the tag is absent or unparseable.
-	Percentage int
+	Percentage int `json:"percentage"`
 
 	// RUA lists the aggregate report URIs from the "rua" tag, in the
 	// order published.
-	RUA []string
+	RUA []string `json:"rua"`
 
 	// RUF lists the forensic report URIs from the "ruf" tag, in the
 	// order published.
-	RUF []string
+	RUF []string `json:"ruf"`
 }
 
 // EffectiveSubdomainPolicy returns the policy that actually applies to
