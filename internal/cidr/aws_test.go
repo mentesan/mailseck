@@ -24,7 +24,7 @@ func TestAWSProviderFetch(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "success ignores non-EC2 services",
+			name: "success covers both families and ignores non-EC2 services",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]any{
 					"prefixes": []map[string]string{
@@ -32,11 +32,16 @@ func TestAWSProviderFetch(t *testing.T) {
 						{"ip_prefix": "13.32.0.0/15", "service": "CLOUDFRONT"},
 						{"ip_prefix": "15.230.0.0/18", "service": "EC2"},
 					},
+					"ipv6_prefixes": []map[string]string{
+						{"ipv6_prefix": "2600:1f01::/32", "service": "EC2"},
+						{"ipv6_prefix": "2600:1ff2::/34", "service": "CLOUDFRONT"},
+					},
 				})
 			},
 			want: []netip.Prefix{
 				netip.MustParsePrefix("3.5.140.0/22"),
 				netip.MustParsePrefix("15.230.0.0/18"),
+				netip.MustParsePrefix("2600:1f01::/32"),
 			},
 		},
 		{

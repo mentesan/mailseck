@@ -17,14 +17,14 @@ const awsRangesURL = "https://ip-ranges.amazonaws.com/ip-ranges.json"
 // EC2 range, i.e. rentable by any AWS customer.
 const awsEC2Service = "EC2"
 
-// awsProvider fetches AWS's publicly-registrable EC2 IPv4 ranges from
-// Amazon's published ip-ranges.json.
+// awsProvider fetches AWS's publicly-registrable EC2 IPv4 and IPv6 ranges
+// from Amazon's published ip-ranges.json.
 type awsProvider struct {
 	url    string
 	client *http.Client
 }
 
-// NewAWSProvider returns a CIDRProvider for AWS EC2's public IPv4 ranges.
+// NewAWSProvider returns a CIDRProvider for AWS EC2's public IP ranges.
 func NewAWSProvider() CIDRProvider {
 	return &awsProvider{url: awsRangesURL, client: http.DefaultClient}
 }
@@ -35,17 +35,22 @@ func (p *awsProvider) Name() string {
 }
 
 // awsIPRangesJSON mirrors the fields of ip-ranges.json that Fetch needs;
-// the upstream document carries additional fields, including a separate
-// ipv6_prefixes list, that are intentionally ignored.
+// the upstream document carries additional fields that are intentionally
+// ignored. IPv4 and IPv6 prefixes are listed under separate top-level
+// arrays, each with its own field name for the CIDR itself.
 type awsIPRangesJSON struct {
 	Prefixes []struct {
 		IPPrefix string `json:"ip_prefix"`
 		Service  string `json:"service"`
 	} `json:"prefixes"`
+	IPv6Prefixes []struct {
+		IPv6Prefix string `json:"ipv6_prefix"`
+		Service    string `json:"service"`
+	} `json:"ipv6_prefixes"`
 }
 
-// Fetch returns AWS EC2's current set of publicly-registrable IPv4
-// prefixes.
+// Fetch returns AWS EC2's current set of publicly-registrable IP
+// prefixes, covering both IPv4 and IPv6.
 func (p *awsProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url, nil)
 	if err != nil {
@@ -67,7 +72,7 @@ func (p *awsProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 		return nil, fmt.Errorf("aws: decode response: %w", err)
 	}
 
-	prefixes := make([]netip.Prefix, 0, len(doc.Prefixes))
+	prefixes := make([]netip.Prefix, 0, len(doc.Prefixes)+len(doc.IPv6Prefixes))
 	for _, entry := range doc.Prefixes {
 		if entry.Service != awsEC2Service {
 			continue
@@ -75,6 +80,16 @@ func (p *awsProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 		prefix, err := netip.ParsePrefix(entry.IPPrefix)
 		if err != nil {
 			return nil, fmt.Errorf("aws: parse prefix %q: %w", entry.IPPrefix, err)
+		}
+		prefixes = append(prefixes, prefix)
+	}
+	for _, entry := range doc.IPv6Prefixes {
+		if entry.Service != awsEC2Service {
+			continue
+		}
+		prefix, err := netip.ParsePrefix(entry.IPv6Prefix)
+		if err != nil {
+			return nil, fmt.Errorf("aws: parse prefix %q: %w", entry.IPv6Prefix, err)
 		}
 		prefixes = append(prefixes, prefix)
 	}

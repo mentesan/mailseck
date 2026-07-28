@@ -24,7 +24,7 @@ func TestGCPProviderFetch(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "success ignores ipv6-only entries",
+			name: "success covers both ipv4 and ipv6 entries",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]any{
 					"prefixes": []map[string]string{
@@ -36,6 +36,7 @@ func TestGCPProviderFetch(t *testing.T) {
 			},
 			want: []netip.Prefix{
 				netip.MustParsePrefix("8.8.8.0/24"),
+				netip.MustParsePrefix("2001:4860::/32"),
 				netip.MustParsePrefix("34.64.0.0/10"),
 			},
 		},

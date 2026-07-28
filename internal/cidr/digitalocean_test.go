@@ -23,7 +23,7 @@ func TestDigitalOceanProviderFetch(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "success skips header, blank lines and ipv6",
+			name: "success skips header and blank lines, keeps both families",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				w.Write([]byte("ip_prefix,country_code,region,city,postal_code\n" +
 					"104.131.0.0/16,US,NY,New York,10004\n" +
@@ -33,6 +33,7 @@ func TestDigitalOceanProviderFetch(t *testing.T) {
 			},
 			want: []netip.Prefix{
 				netip.MustParsePrefix("104.131.0.0/16"),
+				netip.MustParsePrefix("2604:a880::/32"),
 				netip.MustParsePrefix("138.197.0.0/16"),
 			},
 		},

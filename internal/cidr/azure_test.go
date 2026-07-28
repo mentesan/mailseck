@@ -51,10 +51,11 @@ func TestAzureProviderFetch(t *testing.T) {
 		wantErr     bool
 	}{
 		{
-			name:        "success aggregates AzureCloud entries and skips ipv6",
+			name:        "success aggregates AzureCloud entries across families",
 			jsonHandler: validJSON,
 			want: []netip.Prefix{
 				netip.MustParsePrefix("13.64.0.0/11"),
+				netip.MustParsePrefix("2603:1000::/24"),
 				netip.MustParsePrefix("13.104.0.0/14"),
 			},
 		},

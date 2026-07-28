@@ -25,9 +25,9 @@ const azureDownloadPageURL = "https://www.microsoft.com/en-us/download/details.a
 // "ServiceTags_Public_<8 digits>.json" filename.
 var azureServiceTagsURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+ServiceTags_Public_\d{8}\.json`)
 
-// azureProvider fetches Azure's publicly-registrable IPv4 ranges by first
-// scraping the current ServiceTags JSON URL off Microsoft's download page,
-// then fetching that JSON.
+// azureProvider fetches Azure's publicly-registrable IPv4 and IPv6 ranges
+// by first scraping the current ServiceTags JSON URL off Microsoft's
+// download page, then fetching that JSON.
 type azureProvider struct {
 	pageURL string
 	client  *http.Client
@@ -55,8 +55,9 @@ type azureServiceTagsJSON struct {
 	} `json:"values"`
 }
 
-// Fetch returns Azure's current set of publicly-registrable IPv4 prefixes,
-// aggregated across every "AzureCloud" and "AzureCloud.<region>" entry.
+// Fetch returns Azure's current set of publicly-registrable IP prefixes,
+// covering both IPv4 and IPv6, aggregated across every "AzureCloud" and
+// "AzureCloud.<region>" entry.
 func (p *azureProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 	jsonURL, err := p.resolveServiceTagsURL(ctx)
 	if err != nil {
@@ -92,9 +93,6 @@ func (p *azureProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 			prefix, err := netip.ParsePrefix(raw)
 			if err != nil {
 				return nil, fmt.Errorf("azure: parse prefix %q: %w", raw, err)
-			}
-			if prefix.Addr().Is6() {
-				continue
 			}
 			prefixes = append(prefixes, prefix)
 		}

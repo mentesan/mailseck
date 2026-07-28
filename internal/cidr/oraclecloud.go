@@ -13,7 +13,7 @@ import (
 const oracleRangesURL = "https://docs.oracle.com/en-us/iaas/tools/public_ip_ranges.json"
 
 // oracleCloudProvider fetches Oracle Cloud Infrastructure's
-// publicly-registrable IPv4 ranges from Oracle's published
+// publicly-registrable IPv4 and IPv6 ranges from Oracle's published
 // public_ip_ranges.json.
 type oracleCloudProvider struct {
 	url    string
@@ -21,7 +21,7 @@ type oracleCloudProvider struct {
 }
 
 // NewOracleCloudProvider returns a CIDRProvider for Oracle Cloud
-// Infrastructure's public IPv4 ranges.
+// Infrastructure's public IP ranges.
 func NewOracleCloudProvider() CIDRProvider {
 	return &oracleCloudProvider{url: oracleRangesURL, client: http.DefaultClient}
 }
@@ -43,8 +43,8 @@ type oracleIPRangesJSON struct {
 	} `json:"regions"`
 }
 
-// Fetch returns Oracle Cloud's current set of publicly-registrable IPv4
-// prefixes, aggregated across every region.
+// Fetch returns Oracle Cloud's current set of publicly-registrable IP
+// prefixes, covering both IPv4 and IPv6, aggregated across every region.
 func (p *oracleCloudProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url, nil)
 	if err != nil {
@@ -72,9 +72,6 @@ func (p *oracleCloudProvider) Fetch(ctx context.Context) ([]netip.Prefix, error)
 			prefix, err := netip.ParsePrefix(entry.CIDR)
 			if err != nil {
 				return nil, fmt.Errorf("oraclecloud: parse prefix %q: %w", entry.CIDR, err)
-			}
-			if prefix.Addr().Is6() {
-				continue
 			}
 			prefixes = append(prefixes, prefix)
 		}

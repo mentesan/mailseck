@@ -16,14 +16,14 @@ import (
 const doRangesURL = "https://www.digitalocean.com/geo/google.csv"
 
 // digitalOceanProvider fetches DigitalOcean's publicly-registrable IPv4
-// ranges from its geo-IP CSV export.
+// and IPv6 ranges from its geo-IP CSV export.
 type digitalOceanProvider struct {
 	url    string
 	client *http.Client
 }
 
 // NewDigitalOceanProvider returns a CIDRProvider for DigitalOcean's public
-// IPv4 ranges.
+// IP ranges.
 func NewDigitalOceanProvider() CIDRProvider {
 	return &digitalOceanProvider{url: doRangesURL, client: http.DefaultClient}
 }
@@ -33,8 +33,9 @@ func (p *digitalOceanProvider) Name() string {
 	return "DigitalOcean"
 }
 
-// Fetch returns DigitalOcean's current set of publicly-registrable IPv4
-// prefixes, read one per line from the CIDR field of the CSV export.
+// Fetch returns DigitalOcean's current set of publicly-registrable IP
+// prefixes, covering both IPv4 and IPv6, read one per line from the CIDR
+// field of the CSV export.
 func (p *digitalOceanProvider) Fetch(ctx context.Context) ([]netip.Prefix, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, p.url, nil)
 	if err != nil {
@@ -65,9 +66,6 @@ func (p *digitalOceanProvider) Fetch(ctx context.Context) ([]netip.Prefix, error
 		prefix, err := netip.ParsePrefix(field)
 		if err != nil {
 			return nil, fmt.Errorf("digitalocean: parse prefix %q: %w", field, err)
-		}
-		if prefix.Addr().Is6() {
-			continue
 		}
 		prefixes = append(prefixes, prefix)
 	}

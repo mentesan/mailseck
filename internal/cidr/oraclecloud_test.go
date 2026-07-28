@@ -24,7 +24,7 @@ func TestOracleCloudProviderFetch(t *testing.T) {
 		wantErr bool
 	}{
 		{
-			name: "success aggregates regions and skips ipv6",
+			name: "success aggregates regions across families",
 			handler: func(w http.ResponseWriter, r *http.Request) {
 				json.NewEncoder(w).Encode(map[string]any{
 					"regions": []map[string]any{
@@ -46,6 +46,7 @@ func TestOracleCloudProviderFetch(t *testing.T) {
 			},
 			want: []netip.Prefix{
 				netip.MustParsePrefix("129.146.0.0/16"),
+				netip.MustParsePrefix("2603:c020::/32"),
 				netip.MustParsePrefix("140.238.0.0/15"),
 			},
 		},
