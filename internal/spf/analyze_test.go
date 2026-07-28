@@ -279,3 +279,90 @@ func TestAnalyzeNoOverlapWithUnrelatedCIDR(t *testing.T) {
 		t.Errorf("Overlaps = %v, want none", result.Overlaps)
 	}
 }
+
+// TestAnalyzeTrustedMailVendorIncludeIsNotReportedAsOverlap reproduces a
+// real false positive found in production: a domain whose SPF record
+// just includes Microsoft 365's own spf.protection.outlook.com. That
+// record's ranges are Exchange Online Protection's own outbound mail
+// infrastructure, but they sit inside Azure's publicly-advertised
+// address space (Microsoft operates both), so Azure's CIDR feed also
+// lists sub-ranges of them. This includes 40.107.0.0/16, a range an
+// earlier, IP-based version of this false-positive fix (copied from the
+// reference tool) did not know about and still flagged -- which is
+// exactly why trust is now keyed by the vendor's hostname instead.
+func TestAnalyzeTrustedMailVendorIncludeIsNotReportedAsOverlap(t *testing.T) {
+	resolver := &fakeResolver{records: map[string][]string{
+		"example.com.br": {"v=spf1 include:spf.protection.outlook.com -all"},
+		"spf.protection.outlook.com": {
+			"v=spf1 ip4:40.92.0.0/15 ip4:40.107.0.0/16 ip4:52.100.0.0/15 -all",
+		},
+	}}
+	cidrs := map[string][]netip.Prefix{
+		// Real sub-ranges Azure's own published CIDR feed lists inside
+		// Microsoft's EOP ranges, as observed against the live feed.
+		"Azure": {
+			netip.MustParsePrefix("40.93.136.0/24"),
+			netip.MustParsePrefix("40.107.39.0/24"),
+		},
+	}
+
+	result, err := Analyze(context.Background(), resolver, "example.com.br", cidrs)
+	if err != nil {
+		t.Fatalf("Analyze() unexpected error: %v", err)
+	}
+	if len(result.Overlaps) != 0 {
+		t.Errorf("Overlaps = %v, want none: spf.protection.outlook.com is a trusted first-party mail host", result.Overlaps)
+	}
+	// The ranges must still count toward TotalIPs: they are real,
+	// permitted sender ranges, just not a spoofing risk.
+	if result.TotalIPs == 0 {
+		t.Error("TotalIPs = 0, want the trusted vendor's ranges to still be counted")
+	}
+}
+
+// TestAnalyzeTrustPropagatesTransitivelyThroughTrustedChain checks that
+// trust, once earned by reaching a known vendor hostname, carries
+// forward through whatever that vendor's own record includes next, even
+// via an intermediary the customer controls.
+func TestAnalyzeTrustPropagatesTransitivelyThroughTrustedChain(t *testing.T) {
+	resolver := &fakeResolver{records: map[string][]string{
+		"example.com":                {"v=spf1 include:relay.example -all"},
+		"relay.example":              {"v=spf1 include:spf.protection.outlook.com"},
+		"spf.protection.outlook.com": {"v=spf1 ip4:40.92.0.0/15 -all"},
+	}}
+	cidrs := map[string][]netip.Prefix{
+		"Azure": {netip.MustParsePrefix("40.93.136.0/24")},
+	}
+
+	result, err := Analyze(context.Background(), resolver, "example.com", cidrs)
+	if err != nil {
+		t.Fatalf("Analyze() unexpected error: %v", err)
+	}
+	if len(result.Overlaps) != 0 {
+		t.Errorf("Overlaps = %v, want none: trust should propagate through the intermediary include", result.Overlaps)
+	}
+}
+
+// TestAnalyzeUntrustedIncludeStillReportsOverlap guards against the
+// trust fix swallowing real overlaps: a customer-controlled include
+// that happens to authorize the very same Microsoft range directly,
+// without going through the trusted hostname, must still be flagged.
+// Trust is earned by the hostname doing the including, not by the IP
+// range itself.
+func TestAnalyzeUntrustedIncludeStillReportsOverlap(t *testing.T) {
+	resolver := &fakeResolver{records: map[string][]string{
+		"example.com":    {"v=spf1 include:vendor.example -all"},
+		"vendor.example": {"v=spf1 ip4:40.92.0.0/15 -all"},
+	}}
+	cidrs := map[string][]netip.Prefix{
+		"Azure": {netip.MustParsePrefix("40.93.136.0/24")},
+	}
+
+	result, err := Analyze(context.Background(), resolver, "example.com", cidrs)
+	if err != nil {
+		t.Fatalf("Analyze() unexpected error: %v", err)
+	}
+	if len(result.Overlaps) != 1 {
+		t.Fatalf("Overlaps = %v, want exactly one: vendor.example is not a trusted hostname", result.Overlaps)
+	}
+}
