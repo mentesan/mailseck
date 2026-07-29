@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"io"
 	"strings"
 	"time"
@@ -46,6 +47,23 @@ func (s *stringSliceFlag) Set(value string) error {
 	return nil
 }
 
+// usageRows is the help text for each flag, short and long name merged
+// onto one line. flag.FlagSet.PrintDefaults has no notion of aliases:
+// since -d/--domain and -c/--custom-ip are each registered twice (once
+// per name) to support both spellings, it would print every name as its
+// own separate entry with a duplicated description. This table is
+// printed instead; keep it in sync with the fs.StringVar/fs.Var calls
+// below whenever a flag is added, renamed, or removed.
+var usageRows = [][2]string{
+	{"-d, --domain string", "domain to analyze (required)"},
+	{"-c, --custom-ip string", "custom CIDR to flag as spoofable (repeatable)"},
+	{"--refresh-ips", "force a refresh of the cached cloud provider CIDRs"},
+	{"--cache-ttl duration", "validity duration of the cloud CIDR cache (default 24h)"},
+	{"--timeout duration", "overall timeout for the whole analysis (default 30s)"},
+	{"--json", "emit the report as JSON instead of text"},
+	{"--no-color", "disable ANSI colors even on a terminal"},
+}
+
 // parseFlags parses args into a config. It returns flag.ErrHelp
 // unchanged when -h/--help was requested, so callers can treat that as
 // a successful exit rather than a usage error.
@@ -53,8 +71,10 @@ func parseFlags(args []string, output io.Writer) (config, error) {
 	fs := flag.NewFlagSet("mailseck", flag.ContinueOnError)
 	fs.SetOutput(output)
 	fs.Usage = func() {
-		io.WriteString(output, "Usage: mailseck -d example.com [flags]\n\n")
-		fs.PrintDefaults()
+		fmt.Fprint(output, "Usage: mailseck -d example.com [flags]\n\n")
+		for _, row := range usageRows {
+			fmt.Fprintf(output, "  %-24s %s\n", row[0], row[1])
+		}
 	}
 
 	var cfg config

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"flag"
+	"strings"
 	"testing"
 	"time"
 )
@@ -107,5 +108,29 @@ func TestParseFlagsUnknownFlagIsAnError(t *testing.T) {
 	var stderr bytes.Buffer
 	if _, err := parseFlags([]string{"-d", "example.com", "--bogus"}, &stderr); err == nil {
 		t.Fatal("parseFlags() error = nil, want error for an unknown flag")
+	}
+}
+
+// TestParseFlagsHelpMergesAliasesWithoutDuplication guards against
+// flag.FlagSet's default -h output, which has no notion of aliases and
+// would print "-d" and "--domain" (registered separately so both
+// spellings work) as two separate entries with a duplicated
+// description. usageRows must list each flag pair exactly once.
+func TestParseFlagsHelpMergesAliasesWithoutDuplication(t *testing.T) {
+	var stderr bytes.Buffer
+	parseFlags([]string{"-h"}, &stderr)
+	out := stderr.String()
+
+	if strings.Count(out, "domain to analyze") != 1 {
+		t.Errorf("expected the domain flag's description exactly once, got:\n%s", out)
+	}
+	if strings.Count(out, "custom CIDR to flag as spoofable") != 1 {
+		t.Errorf("expected the custom-ip flag's description exactly once, got:\n%s", out)
+	}
+	if !strings.Contains(out, "-d, --domain") {
+		t.Errorf("expected the domain flag's two spellings merged onto one line, got:\n%s", out)
+	}
+	if !strings.Contains(out, "-c, --custom-ip") {
+		t.Errorf("expected the custom-ip flag's two spellings merged onto one line, got:\n%s", out)
 	}
 }
