@@ -214,6 +214,54 @@ func TestAnalyzeSelfReferenceTerminatesWithoutHanging(t *testing.T) {
 	}
 }
 
+// TestAnalyzeDiamondIncludeIsNotACycle reproduces a real false positive
+// found in production: otima.digital's SPF record includes both
+// _spf.rdstation.com.br and sendgrid.net directly, but
+// _spf.rdstation.com.br's own record *also* includes sendgrid.net. That
+// is an ordinary diamond shape (two unrelated branches sharing a
+// provider), not a cycle -- sendgrid.net is never its own ancestor. A
+// visited set that never forgets a host once seen would misreport this
+// exact case as ErrCyclicReference.
+func TestAnalyzeDiamondIncludeIsNotACycle(t *testing.T) {
+	resolver := &fakeResolver{records: map[string][]string{
+		"example.digital": {
+			"v=spf1 include:_spf.rdstation.example include:sendgrid.example -all",
+		},
+		"_spf.rdstation.example": {"v=spf1 include:sendgrid.example ?all"},
+		"sendgrid.example":       {"v=spf1 ip4:167.89.0.0/17 ~all"},
+	}}
+
+	result, err := Analyze(context.Background(), resolver, "example.digital", nil)
+	if err != nil {
+		t.Fatalf("Analyze() unexpected error: %v", err)
+	}
+	// sendgrid.example is resolved twice (once via rdstation, once
+	// directly), so it contributes to TotalIPs twice -- that is
+	// expected and matches how a real SPF evaluator re-resolves a
+	// repeated include; the point of this test is only that it is not
+	// an error.
+	if result.TotalIPs == 0 {
+		t.Error("TotalIPs = 0, want sendgrid.example's range counted at least once")
+	}
+}
+
+// TestAnalyzeCycleNotTouchingRootIsStillDetected guards the fix for the
+// diamond false positive above: a genuine cycle several levels deep,
+// where none of the participants is the domain originally passed to
+// Analyze, must still be caught.
+func TestAnalyzeCycleNotTouchingRootIsStillDetected(t *testing.T) {
+	resolver := &fakeResolver{records: map[string][]string{
+		"root.example": {"v=spf1 include:x.example -all"},
+		"x.example":    {"v=spf1 include:y.example"},
+		"y.example":    {"v=spf1 include:x.example"},
+	}}
+
+	_, err := Analyze(context.Background(), resolver, "root.example", nil)
+	if !errors.Is(err, ErrCyclicReference) {
+		t.Fatalf("Analyze() error = %v, want wrapping ErrCyclicReference", err)
+	}
+}
+
 func TestAnalyzeIrresolvableHostDoesNotAbort(t *testing.T) {
 	resolveErr := errors.New("NXDOMAIN")
 	resolver := &fakeResolver{

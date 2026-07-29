@@ -154,6 +154,16 @@ func (s *analyzeState) walkRecord(ctx context.Context, record string, isRootChai
 // evaluating the rest of the record. Once trusted is true it stays true
 // for everything reached from here on; if it is not yet true, it becomes
 // true when host itself is a known first-party mail vendor hostname.
+//
+// s.visited marks host only while it is on the current recursion path
+// (an ancestor), not for the whole analysis: it is unmarked via defer
+// once this call returns. A cycle is a host that revisits one of its
+// own ancestors; it is not the same thing as two unrelated branches of
+// the include tree both happening to reference the same host, which is
+// an extremely common, entirely legitimate pattern (e.g. two different
+// ESPs whose own SPF records both include a third, shared provider).
+// Marking a host as "seen" forever, instead of just "on the current
+// path", would misreport that ordinary diamond shape as a cycle.
 func (s *analyzeState) recurseInto(ctx context.Context, host string, isRootChain, trusted bool) error {
 	if host == "" {
 		return nil
@@ -165,6 +175,7 @@ func (s *analyzeState) recurseInto(ctx context.Context, host string, isRootChain
 		return fmt.Errorf("%w: %s", ErrCyclicReference, host)
 	}
 	s.visited[host] = true
+	defer delete(s.visited, host)
 
 	trusted = trusted || isTrustedMailHost(host)
 
