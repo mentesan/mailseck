@@ -69,15 +69,15 @@ make build
 mailseck -d <domain> [flags]
 ```
 
-| Flag | Default | Description |
-|---|---|---|
-| `-d`, `--domain` | *(required)* | Domain to analyze |
-| `-c`, `--custom-ip` | | Custom CIDR to flag as spoofable; repeatable |
-| `--refresh-ips` | `false` | Force a refresh of the cached cloud provider CIDRs, ignoring the TTL |
-| `--cache-ttl` | `24h` | Validity duration of the on-disk cloud CIDR cache |
-| `--timeout` | `30s` | Overall timeout for the whole analysis (CIDR loading, SPF, and DMARC) |
-| `--json` | `false` | Emit the report as JSON instead of text |
-| `--no-color` | `false` | Disable ANSI colors even on a terminal |
+| Flag                | Default      | Description                                                           |
+| ------------------- | ------------ | --------------------------------------------------------------------- |
+| `-d`, `--domain`    | _(required)_ | Domain to analyze                                                     |
+| `-c`, `--custom-ip` |              | Custom CIDR to flag as spoofable; repeatable                          |
+| `--refresh-ips`     | `false`      | Force a refresh of the cached cloud provider CIDRs, ignoring the TTL  |
+| `--cache-ttl`       | `24h`        | Validity duration of the on-disk cloud CIDR cache                     |
+| `--timeout`         | `30s`        | Overall timeout for the whole analysis (CIDR loading, SPF, and DMARC) |
+| `--json`            | `false`      | Emit the report as JSON instead of text                               |
+| `--no-color`        | `false`      | Disable ANSI colors even on a terminal                                |
 
 Exit code: `0` if no `crit` finding was raised, `1` if at least one was,
 `2` if the run itself failed (invalid input, a network/DNS failure, or
@@ -200,12 +200,12 @@ library. See [PRD.md](PRD.md) §7 for the full architecture rationale.
 This project uses a `Makefile` for the common tasks:
 
 ```
-make build             # build the mailseck binary
+make build              # build the mailseck binary
 make test               # run the fast test suite (no network access)
-make test-integration    # also run tests that hit real DNS (see below)
-make lint                # go vet + gofmt -l
-make clean               # remove the built binary
-make install              # go install .
+make test-integration   # also run tests that hit real DNS (see below)
+make lint               # go vet + gofmt -l
+make clean              # remove the built binary
+make install            # go install .
 ```
 
 ### Integration tests
