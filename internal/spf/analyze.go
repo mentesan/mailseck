@@ -45,7 +45,11 @@ type analyzeState struct {
 // A domain that publishes no SPF record at all is not an error: the
 // returned SPFResult simply has an empty RawRecord.
 func Analyze(ctx context.Context, resolver Resolver, domain string, cidrs map[string][]netip.Prefix) (SPFResult, error) {
-	var result SPFResult
+	// IrresolvableHosts and Overlaps start as non-nil empty slices, not
+	// nil, so they always serialize to JSON as [] rather than null --
+	// automation consuming the output should never have to special-case
+	// a null collection.
+	result := SPFResult{IrresolvableHosts: []string{}, Overlaps: []Overlap{}}
 	state := &analyzeState{
 		resolver: resolver,
 		cidrs:    cidrs,

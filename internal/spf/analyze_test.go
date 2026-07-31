@@ -38,6 +38,12 @@ func TestAnalyzeNoSPFRecord(t *testing.T) {
 	if result.TotalLookups != 0 || result.TotalIPs != 0 || result.HasHardFail {
 		t.Errorf("Analyze() = %+v, want zero-value result", result)
 	}
+	if result.IrresolvableHosts == nil {
+		t.Error("IrresolvableHosts is nil, want a non-nil empty slice (so JSON emits [] rather than null)")
+	}
+	if result.Overlaps == nil {
+		t.Error("Overlaps is nil, want a non-nil empty slice (so JSON emits [] rather than null)")
+	}
 }
 
 func TestAnalyzeRootResolutionFailureIsAnError(t *testing.T) {

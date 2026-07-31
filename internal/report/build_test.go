@@ -1,6 +1,8 @@
 package report
 
 import (
+	"net/netip"
+	"strings"
 	"testing"
 
 	"github.com/mentesan/mailseck/internal/dmarc"
@@ -123,6 +125,9 @@ func TestBuildIrresolvableHostIsCrit(t *testing.T) {
 	if !ok || f.Severity != Crit {
 		t.Fatalf("expected a Crit irresolvable-host finding, got %+v", report.Findings)
 	}
+	if len(f.Items) != 1 || f.Items[0] != "broken.example" {
+		t.Errorf("Items = %v, want [broken.example]: the hostname list should be structured, not folded into Detail", f.Items)
+	}
 }
 
 func TestBuildAllHostsResolvedIsInfo(t *testing.T) {
@@ -147,6 +152,37 @@ func TestBuildOverlapIsCrit(t *testing.T) {
 	f, ok := findByTitle(report.Findings, "Permitted ranges are public-obtainable")
 	if !ok || f.Severity != Crit {
 		t.Fatalf("expected a Crit overlap finding, got %+v", report.Findings)
+	}
+}
+
+// TestBuildOverlapDetailStaysShortAndItemsCarryTheList guards against the
+// overlap finding turning back into one long, semicolon-joined Detail
+// string: with several overlaps, Detail must stay a short summary and
+// each overlap must appear as its own entry in Items instead.
+func TestBuildOverlapDetailStaysShortAndItemsCarryTheList(t *testing.T) {
+	result := spf.SPFResult{
+		RawRecord: "v=spf1 ip4:203.0.113.0/24 ip4:198.51.100.0/24 -all",
+		Overlaps: []spf.Overlap{
+			{Host: "example.com", SPFPrefix: netip.MustParsePrefix("203.0.113.0/24"),
+				CloudPrefix: netip.MustParsePrefix("203.0.113.0/25"), Provider: "AWS"},
+			{Host: "vendor.example", SPFPrefix: netip.MustParsePrefix("198.51.100.0/24"),
+				CloudPrefix: netip.MustParsePrefix("198.51.100.0/25"), Provider: "GCP"},
+		},
+	}
+	report := Build("example.com", result, nil)
+
+	f, ok := findByTitle(report.Findings, "Permitted ranges are public-obtainable")
+	if !ok {
+		t.Fatalf("expected an overlap finding, got %+v", report.Findings)
+	}
+	if len(f.Detail) > 200 {
+		t.Errorf("Detail is %d chars, want a short summary, not one entry per overlap: %q", len(f.Detail), f.Detail)
+	}
+	if len(f.Items) != 2 {
+		t.Fatalf("Items = %v, want 2 entries, one per overlap", f.Items)
+	}
+	if !strings.Contains(f.Items[0], "example.com") || !strings.Contains(f.Items[1], "vendor.example") {
+		t.Errorf("Items = %v, want each overlap's own Host named in its own item", f.Items)
 	}
 }
 
@@ -296,5 +332,59 @@ func TestBuildReportCarriesDomainAndRawResults(t *testing.T) {
 	}
 	if report.DMARC != dmarcResult {
 		t.Errorf("DMARC = %+v, want the same pointer passed in", report.DMARC)
+	}
+}
+
+// TestBuildFindingCodeIsStableAcrossSeverity guards the whole point of
+// Code: automation should be able to match on it regardless of which
+// severity a rule happened to produce this run. The IP-count rule is a
+// good test case since it alone spans all three severities.
+func TestBuildFindingCodeIsStableAcrossSeverity(t *testing.T) {
+	tests := []struct {
+		name     string
+		totalIPs uint64
+		want     Severity
+	}{
+		{name: "info tier", totalIPs: 500, want: Info},
+		{name: "warn tier", totalIPs: 10_001, want: Warn},
+		{name: "crit tier", totalIPs: 1_000_001, want: Crit},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := spf.SPFResult{RawRecord: "v=spf1 -all", TotalIPs: tt.totalIPs}
+			report := Build("example.com", result, nil)
+
+			var found *Finding
+			for i := range report.Findings {
+				if report.Findings[i].Code == "spf_ip_count" {
+					found = &report.Findings[i]
+					break
+				}
+			}
+			if found == nil {
+				t.Fatalf("no finding with code spf_ip_count, got %+v", report.Findings)
+			}
+			if found.Severity != tt.want {
+				t.Errorf("Severity = %q, want %q", found.Severity, tt.want)
+			}
+		})
+	}
+}
+
+// TestBuildFindingItemsIsNeverNil checks every finding a healthy,
+// minimal report produces: Items must always be a non-nil, empty slice
+// when a rule has no itemized detail, so JSON always emits [] and
+// automation never has to special-case null.
+func TestBuildFindingItemsIsNeverNil(t *testing.T) {
+	spfResult := spf.SPFResult{RawRecord: "v=spf1 -all", HasHardFail: true}
+	dmarcResult := &dmarc.DMARCResult{IsPresent: true, Policy: "reject", SubdomainPolicy: "reject", Percentage: 100}
+
+	report := Build("example.com", spfResult, dmarcResult)
+
+	for _, f := range report.Findings {
+		if f.Items == nil {
+			t.Errorf("Finding %q (%s) has nil Items, want a non-nil empty slice", f.Title, f.Code)
+		}
 	}
 }

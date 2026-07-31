@@ -18,6 +18,22 @@ const (
 // makes an SPF record invalid for most mail clients.
 const maxValidLookups = 10
 
+// Finding codes: a stable, short identifier per rule this package
+// evaluates, independent of Severity and of any future wording change to
+// Title/Detail. Automation should always match on Code, never on Title.
+const (
+	codeSPFRecord            = "spf_record"
+	codeSPFIPCount           = "spf_ip_count"
+	codeSPFLookupCount       = "spf_lookup_count"
+	codeSPFHostResolution    = "spf_host_resolution"
+	codeSPFHardFail          = "spf_hardfail"
+	codeSPFOverlap           = "spf_overlap"
+	codeDMARCRecord          = "dmarc_record"
+	codeDMARCCoverage        = "dmarc_coverage"
+	codeDMARCPolicy          = "dmarc_policy"
+	codeDMARCSubdomainPolicy = "dmarc_subdomain_policy"
+)
+
 // Build derives a Report's Findings from a domain's already-resolved SPF
 // and DMARC results.
 func Build(domain string, spfResult spf.SPFResult, dmarcResult *dmarc.DMARCResult) Report {
@@ -33,24 +49,26 @@ func Build(domain string, spfResult spf.SPFResult, dmarcResult *dmarc.DMARCResul
 	}
 }
 
+// finding builds a Finding with no itemized sub-detail: Items is always a
+// non-nil, empty slice, so automation never has to special-case a null
+// value depending on which rule produced the finding.
+func finding(code string, severity Severity, title, detail string) Finding {
+	return Finding{Code: code, Severity: severity, Title: title, Detail: detail, Items: []string{}}
+}
+
 // spfFindings evaluates a domain's SPF result against the PRD's report
 // rules. A domain with no SPF record at all gets a single Crit finding;
 // every other rule only applies once a record is known to exist.
 func spfFindings(result spf.SPFResult) []Finding {
 	if result.RawRecord == "" {
-		return []Finding{{
-			Severity: Crit,
-			Title:    "No SPF record is defined",
-			Detail: "Mail can be easily spoofed for this domain. Either implement a record, or " +
-				"explicitly set a no-send record for domains not designed to send mail: 'v=spf1 -all'.",
-		}}
+		return []Finding{finding(codeSPFRecord, Crit, "No SPF record is defined",
+			"Mail can be easily spoofed for this domain. Either implement a record, or "+
+				"explicitly set a no-send record for domains not designed to send mail: 'v=spf1 -all'.")}
 	}
 
-	findings := []Finding{{
-		Severity: Info,
-		Title:    "SPF record is defined",
-		Detail:   "Spoofed mail is somewhat prevented.",
-	}}
+	findings := []Finding{
+		finding(codeSPFRecord, Info, "SPF record is defined", "Spoofed mail is somewhat prevented."),
+	}
 
 	if result.TotalIPs > 0 {
 		findings = append(findings, ipCountFinding(result.TotalIPs))
@@ -60,41 +78,30 @@ func spfFindings(result spf.SPFResult) []Finding {
 
 	if len(result.IrresolvableHosts) > 0 {
 		findings = append(findings, Finding{
+			Code:     codeSPFHostResolution,
 			Severity: Crit,
 			Title:    "A hostname could not be resolved",
-			Detail: fmt.Sprintf("The entire SPF record may be ignored by clients. Unresolved: %v.",
-				result.IrresolvableHosts),
+			Detail:   "The entire SPF record may be ignored by clients.",
+			Items:    result.IrresolvableHosts,
 		})
 	} else {
-		findings = append(findings, Finding{
-			Severity: Info,
-			Title:    "All hostnames were resolved",
-			Detail:   "An irresolvable hostname may invalidate the entire record.",
-		})
+		findings = append(findings, finding(codeSPFHostResolution, Info, "All hostnames were resolved",
+			"An irresolvable hostname may invalidate the entire record."))
 	}
 
 	if result.HasHardFail {
-		findings = append(findings, Finding{
-			Severity: Info,
-			Title:    "'-all' directive is in use",
-			Detail:   "Mail clients know to hard fail spoofed mail.",
-		})
+		findings = append(findings, finding(codeSPFHardFail, Info, "'-all' directive is in use",
+			"Mail clients know to hard fail spoofed mail."))
 	} else {
-		findings = append(findings, Finding{
-			Severity: Warn,
-			Title:    "Directive leaves action ambiguous",
-			Detail:   "Without a hard fail '-all' directive, mail clients will not take firm actions against spoofed mail.",
-		})
+		findings = append(findings, finding(codeSPFHardFail, Warn, "Directive leaves action ambiguous",
+			"Without a hard fail '-all' directive, mail clients will not take firm actions against spoofed mail."))
 	}
 
 	if len(result.Overlaps) > 0 {
 		findings = append(findings, overlapFinding(result.Overlaps))
 	} else {
-		findings = append(findings, Finding{
-			Severity: Info,
-			Title:    "No common public-obtainable IP ranges exist",
-			Detail:   "No cloud provider IP ranges that would allow adversaries to bypass SPF are present in the record.",
-		})
+		findings = append(findings, finding(codeSPFOverlap, Info, "No common public-obtainable IP ranges exist",
+			"No cloud provider IP ranges that would allow adversaries to bypass SPF are present in the record."))
 	}
 
 	return findings
@@ -109,11 +116,11 @@ func ipCountFinding(totalIPs uint64) Finding {
 
 	switch {
 	case totalIPs > criticalIPThreshold:
-		return Finding{Severity: Crit, Title: title, Detail: detail}
+		return finding(codeSPFIPCount, Crit, title, detail)
 	case totalIPs > warnIPThreshold:
-		return Finding{Severity: Warn, Title: title, Detail: detail}
+		return finding(codeSPFIPCount, Warn, title, detail)
 	default:
-		return Finding{Severity: Info, Title: title, Detail: detail}
+		return finding(codeSPFIPCount, Info, title, detail)
 	}
 }
 
@@ -121,36 +128,34 @@ func ipCountFinding(totalIPs uint64) Finding {
 // than RFC 7208 §4.6.4 permits.
 func lookupCountFinding(totalLookups int) Finding {
 	if totalLookups > maxValidLookups {
-		return Finding{
-			Severity: Crit,
-			Title:    fmt.Sprintf("%d DNS lookups were made", totalLookups),
-			Detail:   "Most clients refuse and ignore SPF records that result in more than 10 DNS lookups.",
-		}
+		return finding(codeSPFLookupCount, Crit, fmt.Sprintf("%d DNS lookups were made", totalLookups),
+			"Most clients refuse and ignore SPF records that result in more than 10 DNS lookups.")
 	}
-	return Finding{
-		Severity: Info,
-		Title:    fmt.Sprintf("%d DNS lookup(s) were made", totalLookups),
-		Detail:   "More than 10, and the record would be invalid.",
-	}
+	return finding(codeSPFLookupCount, Info, fmt.Sprintf("%d DNS lookup(s) were made", totalLookups),
+		"More than 10, and the record would be invalid.")
 }
 
 // overlapFinding reports every SPF-permitted CIDR found to overlap a
-// publicly-rentable cloud provider range, naming which link in the
-// include/redirect chain (overlap.Host) published the offending range,
-// so the finding alone is enough to find it without tracing the chain
-// by hand. It is only called when overlaps is non-empty.
+// publicly-rentable cloud provider range. Detail stays a short summary;
+// the itemized "<SPF prefix> (published by <host>) overlaps <cloud
+// prefix> (<provider>)" line for each overlap goes in Items instead, so
+// neither the rendered text nor the JSON Detail field turns into one
+// long semicolon-joined string. It is only called when overlaps is
+// non-empty.
 func overlapFinding(overlaps []spf.Overlap) Finding {
-	detail := "This record contains CIDR ranges for IPs adversaries can obtain, allowing them to " +
-		"bypass SPF and spoof email for your domain:"
+	items := make([]string, 0, len(overlaps))
 	for _, overlap := range overlaps {
-		detail += fmt.Sprintf(" %s (published by %s) overlaps %s (%s);",
-			overlap.SPFPrefix, overlap.Host, overlap.CloudPrefix, overlap.Provider)
+		items = append(items, fmt.Sprintf("%s (published by %s) overlaps %s (%s)",
+			overlap.SPFPrefix, overlap.Host, overlap.CloudPrefix, overlap.Provider))
 	}
 
 	return Finding{
+		Code:     codeSPFOverlap,
 		Severity: Crit,
 		Title:    "Permitted ranges are public-obtainable",
-		Detail:   detail,
+		Detail: fmt.Sprintf("This record contains %d CIDR range(s) that adversaries could obtain, "+
+			"allowing them to bypass SPF and spoof email for your domain.", len(overlaps)),
+		Items: items,
 	}
 }
 
@@ -160,45 +165,29 @@ func overlapFinding(overlaps []spf.Overlap) Finding {
 // exist.
 func dmarcFindings(result *dmarc.DMARCResult) []Finding {
 	if result == nil || !result.IsPresent {
-		return []Finding{{
-			Severity: Crit,
-			Title:    "No DMARC record is defined",
-			Detail:   "This can leave the SPF policy ambiguous.",
-		}}
+		return []Finding{finding(codeDMARCRecord, Crit, "No DMARC record is defined",
+			"This can leave the SPF policy ambiguous.")}
 	}
 
-	findings := []Finding{{
-		Severity: Info,
-		Title:    "DMARC record is defined",
-		Detail:   "SPF policy is less ambiguous.",
-	}}
+	findings := []Finding{
+		finding(codeDMARCRecord, Info, "DMARC record is defined", "SPF policy is less ambiguous."),
+	}
 
 	if result.Percentage < 100 {
-		findings = append(findings, Finding{
-			Severity: Crit,
-			Title:    fmt.Sprintf("Only %d%% of email is covered by DMARC", result.Percentage),
-			Detail:   fmt.Sprintf("Email can be spoofed %d%% of the time.", 100-result.Percentage),
-		})
+		findings = append(findings, finding(codeDMARCCoverage, Crit,
+			fmt.Sprintf("Only %d%% of email is covered by DMARC", result.Percentage),
+			fmt.Sprintf("Email can be spoofed %d%% of the time.", 100-result.Percentage)))
 	} else {
-		findings = append(findings, Finding{
-			Severity: Info,
-			Title:    "100% of email is covered",
-			Detail:   "The policy is not in a phased rollout.",
-		})
+		findings = append(findings, finding(codeDMARCCoverage, Info, "100% of email is covered",
+			"The policy is not in a phased rollout."))
 	}
 
 	if result.Policy == "none" {
-		findings = append(findings, Finding{
-			Severity: Crit,
-			Title:    "DMARC policy is not active",
-			Detail:   "'p=none' is the equivalent of having no DMARC record, allowing spoofed mail.",
-		})
+		findings = append(findings, finding(codeDMARCPolicy, Crit, "DMARC policy is not active",
+			"'p=none' is the equivalent of having no DMARC record, allowing spoofed mail."))
 	} else {
-		findings = append(findings, Finding{
-			Severity: Info,
-			Title:    "DMARC policy is active",
-			Detail:   "A rejection criteria is in use or implied.",
-		})
+		findings = append(findings, finding(codeDMARCPolicy, Info, "DMARC policy is active",
+			"A rejection criteria is in use or implied."))
 	}
 
 	if result.EffectiveSubdomainPolicy() == "none" {
@@ -207,17 +196,11 @@ func dmarcFindings(result *dmarc.DMARCResult) []Finding {
 			detail = "No 'sp' tag is published, so subdomains inherit 'p=none' (RFC 7489 §6.3), " +
 				"which is the equivalent of having no DMARC record for subdomains, allowing spoofed mail."
 		}
-		findings = append(findings, Finding{
-			Severity: Crit,
-			Title:    "DMARC policy is not active for subdomains",
-			Detail:   detail,
-		})
+		findings = append(findings, finding(codeDMARCSubdomainPolicy, Crit,
+			"DMARC policy is not active for subdomains", detail))
 	} else {
-		findings = append(findings, Finding{
-			Severity: Info,
-			Title:    "DMARC policy is active for subdomains",
-			Detail:   "A rejection criteria is in use or implied.",
-		})
+		findings = append(findings, finding(codeDMARCSubdomainPolicy, Info,
+			"DMARC policy is active for subdomains", "A rejection criteria is in use or implied."))
 	}
 
 	return findings

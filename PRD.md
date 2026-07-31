@@ -295,11 +295,19 @@ pacote, conforme diretriz do projeto.
 ```go
 // Finding é um achado individual do relatório, com severidade fixa
 // em três níveis para manter o parsing por consumidores automatizados
-// simples.
+// simples. Code é um identificador curto e estável por regra (ex.:
+// "spf_overlap"), pensado para automação casar contra ele em vez do
+// texto em inglês de Title, que pode mudar de redação entre versões.
+// Items carrega detalhe itemizado (um CIDR sobreposto por linha, um
+// host por hostname não resolvido) em vez de embutir uma lista de
+// tamanho variável dentro da frase única de Detail. Items é sempre um
+// slice não-nil, mesmo vazio, para que o JSON emita [] e nunca null.
 type Finding struct {
+    Code     string   `json:"code"`
     Severity Severity `json:"severity"` // info | warn | crit
     Title    string   `json:"title"`
     Detail   string   `json:"detail"`
+    Items    []string `json:"items"`
 }
 
 // Report é o resultado completo de uma análise, serializável para

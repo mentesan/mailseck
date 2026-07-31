@@ -32,6 +32,9 @@ func TestAnalyzeNoRecord(t *testing.T) {
 	if result.IsPresent {
 		t.Errorf("IsPresent = true, want false: %+v", result)
 	}
+	if result.RUA == nil || result.RUF == nil {
+		t.Errorf("RUA/RUF = %+v, want non-nil empty slices (so JSON emits [] rather than null)", result)
+	}
 }
 
 func TestAnalyzeLookupFailureIsNotPresentNotError(t *testing.T) {
@@ -95,6 +98,9 @@ func TestAnalyzeMissingPctDefaultsTo100(t *testing.T) {
 	}
 	if result.SubdomainPolicy != "" {
 		t.Errorf("SubdomainPolicy = %q, want empty when sp tag is absent", result.SubdomainPolicy)
+	}
+	if result.RUA == nil || result.RUF == nil {
+		t.Errorf("RUA/RUF = %+v, want non-nil empty slices when rua/ruf tags are absent", result)
 	}
 }
 

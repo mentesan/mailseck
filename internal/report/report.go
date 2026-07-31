@@ -27,6 +27,13 @@ const (
 // Finding is a single reported observation about a domain's SPF or
 // DMARC posture.
 type Finding struct {
+	// Code is a short, stable machine-readable identifier for the rule
+	// this finding evaluates (e.g. "spf_overlap", "dmarc_policy"). It
+	// stays the same regardless of Severity, and across any future
+	// wording change to Title or Detail, so automation consuming the
+	// JSON output should match on Code, never on Title.
+	Code string `json:"code"`
+
 	// Severity is the finding's severity level.
 	Severity Severity `json:"severity"`
 
@@ -34,8 +41,16 @@ type Finding struct {
 	Title string `json:"title"`
 
 	// Detail explains the finding and, where applicable, what to do
-	// about it.
+	// about it, in one or two sentences.
 	Detail string `json:"detail"`
+
+	// Items lists additional itemized detail too long or too
+	// structured for Detail's sentence or two -- one line per
+	// overlapping CIDR, or one hostname per unresolved host, for
+	// example -- instead of folding them into one long, delimited
+	// Detail string. It is always a non-nil slice, empty when a finding
+	// has no items, so automation never has to special-case null.
+	Items []string `json:"items"`
 }
 
 // Report is the complete result of analyzing a domain's SPF and DMARC

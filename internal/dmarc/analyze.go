@@ -29,7 +29,7 @@ func Analyze(ctx context.Context, domain string, resolver spf.Resolver) (*DMARCR
 
 	txts, err := resolver.LookupTXT(ctx, "_dmarc."+domain)
 	if err != nil {
-		return &DMARCResult{IsPresent: false}, nil
+		return absentResult(), nil
 	}
 
 	var record string
@@ -41,7 +41,7 @@ func Analyze(ctx context.Context, domain string, resolver spf.Resolver) (*DMARCR
 		}
 	}
 	if matches != 1 {
-		return &DMARCResult{IsPresent: false}, nil
+		return absentResult(), nil
 	}
 
 	tags := parseTags(record)
@@ -65,6 +65,13 @@ func Analyze(ctx context.Context, domain string, resolver spf.Resolver) (*DMARCR
 	return result, nil
 }
 
+// absentResult returns the DMARCResult for a domain with no usable
+// DMARC record: IsPresent false, with RUA/RUF as non-nil empty slices
+// (never null in the JSON output) rather than left at their zero value.
+func absentResult() *DMARCResult {
+	return &DMARCResult{IsPresent: false, RUA: []string{}, RUF: []string{}}
+}
+
 // parseTags splits a DMARC record into its tags: first by ";" into
 // segments, then each segment by its first "=" into a key and value. Tag
 // names are matched case-insensitively per RFC 7489 §6.4; values keep
@@ -83,10 +90,11 @@ func parseTags(record string) map[string]string {
 
 // splitURIs splits a comma-separated "rua" or "ruf" tag value into its
 // individual URIs, trimming surrounding whitespace from each. It returns
-// nil for an empty value.
+// a non-nil empty slice, never nil, for an empty value, so the field
+// always serializes to JSON as [] rather than null.
 func splitURIs(value string) []string {
 	if value == "" {
-		return nil
+		return []string{}
 	}
 
 	parts := strings.Split(value, ",")

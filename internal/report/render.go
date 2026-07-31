@@ -25,9 +25,13 @@ const (
 
 // RenderText writes report to w as human-readable text: a domain header
 // followed by one block per finding, each with a "[CRIT]"/"[WARN]"/
-// "[INFO]" severity badge. The badge is colored with ANSI escape codes
-// unless noColor is true or w is not an interactive terminal, so piping
-// or redirecting output never leaves raw escape codes in the stream.
+// "[INFO]" severity badge, its one-line Detail, and any Items indented
+// further as a bullet per line -- rather than one long, delimited
+// string -- so a finding with many items (e.g. dozens of overlapping
+// CIDRs) stays scannable instead of wrapping into an unreadable wall of
+// text. The badge is colored with ANSI escape codes unless noColor is
+// true or w is not an interactive terminal, so piping or redirecting
+// output never leaves raw escape codes in the stream.
 func RenderText(w io.Writer, report Report, noColor bool) error {
 	useColor := shouldUseColor(w, noColor)
 
@@ -44,11 +48,15 @@ func RenderText(w io.Writer, report Report, noColor bool) error {
 		if _, err := fmt.Fprintf(w, "%s %s\n", severityBadge(finding.Severity, useColor), finding.Title); err != nil {
 			return err
 		}
-		if finding.Detail == "" {
-			continue
+		if finding.Detail != "" {
+			if _, err := fmt.Fprintf(w, "       %s\n", finding.Detail); err != nil {
+				return err
+			}
 		}
-		if _, err := fmt.Fprintf(w, "       %s\n", finding.Detail); err != nil {
-			return err
+		for _, item := range finding.Items {
+			if _, err := fmt.Fprintf(w, "         - %s\n", item); err != nil {
+				return err
+			}
 		}
 	}
 

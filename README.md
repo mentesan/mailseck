@@ -155,8 +155,8 @@ $ mailseck -d example.com --json
     "total_ips": 0,
     "total_lookups": 0,
     "has_hard_fail": true,
-    "irresolvable_hosts": null,
-    "overlaps": null
+    "irresolvable_hosts": [],
+    "overlaps": []
   },
   "dmarc": {
     "is_present": true,
@@ -164,14 +164,16 @@ $ mailseck -d example.com --json
     "policy": "reject",
     "subdomain_policy": "reject",
     "percentage": 100,
-    "rua": null,
-    "ruf": null
+    "rua": [],
+    "ruf": []
   },
   "findings": [
     {
+      "code": "spf_record",
       "severity": "info",
       "title": "SPF record is defined",
-      "detail": "Spoofed mail is somewhat prevented."
+      "detail": "Spoofed mail is somewhat prevented.",
+      "items": []
     }
   ]
 }
@@ -179,6 +181,19 @@ $ mailseck -d example.com --json
 
 (Truncated here for brevity; the real output has one entry in
 `findings` per check described above.)
+
+Every collection field is always an array, never `null` — an SPF record
+with no unresolved hosts serializes `irresolvable_hosts` as `[]`, not
+`null` — so a script or workflow tool never needs a special case for a
+missing collection.
+
+`code` is a short, stable identifier for the rule a finding evaluates
+(e.g. `spf_overlap`, `dmarc_policy`). It stays the same regardless of
+`severity` and across any future wording change to `title`/`detail`, so
+automation should match on `code`, never on the English text. `items`
+carries a finding's itemized detail — one line per overlapping CIDR, or
+one hostname per unresolved host — instead of folding a variable-length
+list into the `detail` sentence.
 
 ## Project layout
 

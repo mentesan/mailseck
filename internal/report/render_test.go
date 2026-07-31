@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -15,12 +16,17 @@ import (
 func sampleReport() Report {
 	return Report{
 		Domain: "example.com",
-		SPF:    spf.SPFResult{RawRecord: "v=spf1 -all", HasHardFail: true},
-		DMARC:  &dmarc.DMARCResult{IsPresent: true, Policy: "reject", Percentage: 100},
+		SPF: spf.SPFResult{
+			RawRecord:         "v=spf1 -all",
+			HasHardFail:       true,
+			IrresolvableHosts: []string{},
+			Overlaps:          []spf.Overlap{},
+		},
+		DMARC: &dmarc.DMARCResult{IsPresent: true, Policy: "reject", Percentage: 100},
 		Findings: []Finding{
-			{Severity: Crit, Title: "No SPF record is defined", Detail: "Mail can be easily spoofed."},
-			{Severity: Warn, Title: "Directive leaves action ambiguous", Detail: "Ambiguous action."},
-			{Severity: Info, Title: "DMARC record is defined", Detail: "SPF policy is less ambiguous."},
+			{Code: "spf_record", Severity: Crit, Title: "No SPF record is defined", Detail: "Mail can be easily spoofed.", Items: []string{}},
+			{Code: "spf_hardfail", Severity: Warn, Title: "Directive leaves action ambiguous", Detail: "Ambiguous action.", Items: []string{}},
+			{Code: "dmarc_record", Severity: Info, Title: "DMARC record is defined", Detail: "SPF policy is less ambiguous.", Items: []string{}},
 		},
 	}
 }
@@ -120,7 +126,7 @@ func TestRenderJSONIsIndentedAndRoundTrips(t *testing.T) {
 		t.Fatalf("Findings = %v, want %v", decoded.Findings, report.Findings)
 	}
 	for i := range report.Findings {
-		if decoded.Findings[i] != report.Findings[i] {
+		if !reflect.DeepEqual(decoded.Findings[i], report.Findings[i]) {
 			t.Errorf("Findings[%d] = %+v, want %+v", i, decoded.Findings[i], report.Findings[i])
 		}
 	}
