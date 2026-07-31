@@ -302,12 +302,57 @@ func TestAnalyzeOverlapDetection(t *testing.T) {
 		t.Fatalf("Analyze() unexpected error: %v", err)
 	}
 	want := Overlap{
+		Host:        "example.com",
 		SPFPrefix:   netip.MustParsePrefix("203.0.113.0/24"),
 		CloudPrefix: netip.MustParsePrefix("203.0.113.0/25"),
 		Provider:    "AWS",
 	}
 	if len(result.Overlaps) != 1 || result.Overlaps[0] != want {
 		t.Errorf("Overlaps = %v, want [%v]", result.Overlaps, want)
+	}
+}
+
+// TestAnalyzeOverlapHostAttributesToTheRightLinkInTheChain proves the
+// point of the Host field: two different SPF-permitted ranges overlap
+// the same cloud provider, but one comes from the root record and the
+// other from an include several links away, so each Overlap must name
+// its own true origin, not just "the domain being analyzed".
+func TestAnalyzeOverlapHostAttributesToTheRightLinkInTheChain(t *testing.T) {
+	resolver := &fakeResolver{records: map[string][]string{
+		"example.com": {
+			"v=spf1 ip4:203.0.113.0/24 include:vendor-a.example include:vendor-b.example -all",
+		},
+		"vendor-a.example":       {"v=spf1 ip4:198.51.100.0/24 -all"},
+		"vendor-b.example":       {"v=spf1 include:vendor-b-relay.example -all"},
+		"vendor-b-relay.example": {"v=spf1 ip4:192.0.2.0/24 -all"},
+	}}
+	cidrs := map[string][]netip.Prefix{
+		"AWS": {
+			netip.MustParsePrefix("203.0.113.0/25"),
+			netip.MustParsePrefix("198.51.100.0/25"),
+			netip.MustParsePrefix("192.0.2.0/25"),
+		},
+	}
+
+	result, err := Analyze(context.Background(), resolver, "example.com", cidrs)
+	if err != nil {
+		t.Fatalf("Analyze() unexpected error: %v", err)
+	}
+
+	hostFor := make(map[string]string, len(result.Overlaps))
+	for _, overlap := range result.Overlaps {
+		hostFor[overlap.SPFPrefix.String()] = overlap.Host
+	}
+
+	want := map[string]string{
+		"203.0.113.0/24":  "example.com",
+		"198.51.100.0/24": "vendor-a.example",
+		"192.0.2.0/24":    "vendor-b-relay.example",
+	}
+	for prefix, wantHost := range want {
+		if hostFor[prefix] != wantHost {
+			t.Errorf("Host for %s = %q, want %q (full: %+v)", prefix, hostFor[prefix], wantHost, result.Overlaps)
+		}
 	}
 }
 

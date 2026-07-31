@@ -18,6 +18,13 @@ type Resolver interface {
 // cloud provider CIDR, meaning a third party could obtain that IP and send
 // mail the SPF record would treat as authorized.
 type Overlap struct {
+	// Host is the domain whose own SPF record published SPFPrefix: the
+	// original domain passed to Analyze, or the include/redirect target
+	// currently being walked when the overlap was found. Pinpointing
+	// this saves tracing the chain by hand to find which link in it
+	// authorized the offending range.
+	Host string `json:"host"`
+
 	// SPFPrefix is the CIDR taken from the SPF record.
 	SPFPrefix netip.Prefix `json:"spf_prefix"`
 

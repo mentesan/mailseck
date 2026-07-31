@@ -62,7 +62,7 @@ func Analyze(ctx context.Context, resolver Resolver, domain string, cidrs map[st
 	}
 	result.RawRecord = record
 
-	if err := state.walkRecord(ctx, record, true, false); err != nil {
+	if err := state.walkRecord(ctx, domain, record, true, false); err != nil {
 		return result, err
 	}
 
@@ -87,16 +87,19 @@ func (s *analyzeState) fetchSPFRecord(ctx context.Context, host string) (string,
 // walkRecord parses each space-separated term of record: counting DNS
 // lookups, summing and overlap-checking ip4/ip6 ranges, tracking the
 // "all" mechanism's qualifier when isRootChain is true, and recursing
-// into include and redirect targets. isRootChain is true for the domain
-// originally passed to Analyze and for any domain reached purely by
-// following redirects from it, since a redirect fully replaces the
-// record being evaluated; it is false inside an include, whose own "all"
-// mechanism does not affect the parent record's default result. trusted
-// is true once the chain has entered a known first-party mail vendor's
-// own SPF record (see trustedhosts.go); it suppresses overlap findings
-// for ip4/ip6 ranges found from that point on, since the vendor's own
-// infrastructure is not the risk the overlap check exists to catch.
-func (s *analyzeState) walkRecord(ctx context.Context, record string, isRootChain, trusted bool) error {
+// into include and redirect targets. host is the domain that published
+// record, attached to any Overlap found here so the report can say
+// which link in the chain authorized the offending range. isRootChain
+// is true for the domain originally passed to Analyze and for any
+// domain reached purely by following redirects from it, since a
+// redirect fully replaces the record being evaluated; it is false
+// inside an include, whose own "all" mechanism does not affect the
+// parent record's default result. trusted is true once the chain has
+// entered a known first-party mail vendor's own SPF record (see
+// trustedhosts.go); it suppresses overlap findings for ip4/ip6 ranges
+// found from that point on, since the vendor's own infrastructure is
+// not the risk the overlap check exists to catch.
+func (s *analyzeState) walkRecord(ctx context.Context, host, record string, isRootChain, trusted bool) error {
 	for _, part := range strings.Fields(record) {
 		if strings.EqualFold(part, "v=spf1") {
 			continue
@@ -119,7 +122,7 @@ func (s *analyzeState) walkRecord(ctx context.Context, record string, isRootChai
 			}
 
 		case "ip4", "ip6":
-			s.countAndCheckOverlap(mechType, value, trusted)
+			s.countAndCheckOverlap(host, mechType, value, trusted)
 
 		case "a", "mx", "ptr", "exists":
 			if err := s.chargeLookup(); err != nil {
@@ -188,7 +191,7 @@ func (s *analyzeState) recurseInto(ctx context.Context, host string, isRootChain
 		return nil
 	}
 
-	return s.walkRecord(ctx, record, isRootChain, trusted)
+	return s.walkRecord(ctx, host, record, isRootChain, trusted)
 }
 
 // chargeLookup accounts for one more RFC 7208 §4.6.4 DNS lookup,
@@ -203,12 +206,14 @@ func (s *analyzeState) chargeLookup() error {
 
 // countAndCheckOverlap parses value as an ip4 or ip6 mechanism's address
 // or CIDR, adds its address count to TotalIPs, and records an Overlap for
-// every cloud-provider prefix it overlaps. A value that fails to parse
-// signals a malformed record, not a condition this analysis needs to
-// abort over, so it is silently skipped. When trusted is true (see
-// walkRecord), the range still counts toward TotalIPs -- it is a real,
-// permitted sender range -- but never produces an Overlap finding.
-func (s *analyzeState) countAndCheckOverlap(mechType, value string, trusted bool) {
+// every cloud-provider prefix it overlaps, attributed to host (the
+// domain whose own SPF record published this mechanism). A value that
+// fails to parse signals a malformed record, not a condition this
+// analysis needs to abort over, so it is silently skipped. When trusted
+// is true (see walkRecord), the range still counts toward TotalIPs -- it
+// is a real, permitted sender range -- but never produces an Overlap
+// finding.
+func (s *analyzeState) countAndCheckOverlap(host, mechType, value string, trusted bool) {
 	prefix, err := parseIPMechanismValue(mechType, value)
 	if err != nil {
 		return
@@ -224,6 +229,7 @@ func (s *analyzeState) countAndCheckOverlap(mechType, value string, trusted bool
 		for _, cloudPrefix := range cloudPrefixes {
 			if prefix.Overlaps(cloudPrefix) {
 				s.result.Overlaps = append(s.result.Overlaps, Overlap{
+					Host:        host,
 					SPFPrefix:   prefix,
 					CloudPrefix: cloudPrefix,
 					Provider:    provider,

@@ -135,13 +135,16 @@ func lookupCountFinding(totalLookups int) Finding {
 }
 
 // overlapFinding reports every SPF-permitted CIDR found to overlap a
-// publicly-rentable cloud provider range. It is only called when
-// overlaps is non-empty.
+// publicly-rentable cloud provider range, naming which link in the
+// include/redirect chain (overlap.Host) published the offending range,
+// so the finding alone is enough to find it without tracing the chain
+// by hand. It is only called when overlaps is non-empty.
 func overlapFinding(overlaps []spf.Overlap) Finding {
 	detail := "This record contains CIDR ranges for IPs adversaries can obtain, allowing them to " +
 		"bypass SPF and spoof email for your domain:"
 	for _, overlap := range overlaps {
-		detail += fmt.Sprintf(" %s overlaps %s (%s);", overlap.SPFPrefix, overlap.CloudPrefix, overlap.Provider)
+		detail += fmt.Sprintf(" %s (published by %s) overlaps %s (%s);",
+			overlap.SPFPrefix, overlap.Host, overlap.CloudPrefix, overlap.Provider)
 	}
 
 	return Finding{
