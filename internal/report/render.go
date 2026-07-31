@@ -60,6 +60,13 @@ func RenderText(w io.Writer, report Report, noColor bool) error {
 		}
 	}
 
+	if report.DMARCSuggestion != nil {
+		if _, err := fmt.Fprintf(w, "\nSuggested DMARC record:\n  %s\n\n  %s\n",
+			report.DMARCSuggestion.Record, report.DMARCSuggestion.Caveat); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 

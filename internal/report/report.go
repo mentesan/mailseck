@@ -69,4 +69,9 @@ type Report struct {
 	// Findings lists every observation derived from SPF and DMARC, in
 	// the order they were produced.
 	Findings []Finding `json:"findings"`
+
+	// DMARCSuggestion is a minimal next-step DMARC record, when the
+	// current one (or its absence) falls short of a safe minimum. It is
+	// nil when there is nothing to suggest.
+	DMARCSuggestion *DMARCSuggestion `json:"dmarc_suggestion"`
 }

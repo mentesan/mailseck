@@ -40,6 +40,15 @@ RFC 7489 §6.3.
 Every check becomes a `Finding` ranked `info`, `warn`, or `crit`,
 rendered as human-readable text or as JSON for scripts and other tools.
 
+When a domain's DMARC record (or its absence) falls short of a safe
+minimum, the report also includes a suggested next-step record —
+purely additive (e.g. adding `rua` reporting) when that's all that's
+missing, or a minimal policy tightening (never a jump straight to
+`p=reject`) when the current policy is weak. It always comes with a
+disclaimer: it's a suggestion to review, not a directive, and mailseck
+has no visibility into which of your senders are actually SPF/DKIM
+aligned.
+
 ## Status
 
 v1.0 complete: every package is implemented and tested, including
@@ -141,6 +150,20 @@ interactive terminal, unless `--no-color` is set or the output is
 redirected or piped — in which case they render as the plain labels
 shown above.
 
+When a domain's DMARC falls short of the safe minimum, a suggestion
+block is appended after the findings:
+
+```
+Suggested DMARC record:
+  v=DMARC1; p=quarantine; sp=quarantine; pct=100; rua=mailto:dmarc-reports@example.com
+
+  This is a suggested minimum configuration, not a directive -- confirm with whoever owns
+  email security for this domain before publishing it. This suggestion also tightens
+  enforcement: confirm every legitimate sending source (including any third-party service)
+  is SPF- or DKIM-aligned before publishing it, or legitimate mail may be quarantined or
+  rejected.
+```
+
 ### Sample JSON output
 
 ```
@@ -175,12 +198,16 @@ $ mailseck -d example.com --json
       "detail": "Spoofed mail is somewhat prevented.",
       "items": []
     }
-  ]
+  ],
+  "dmarc_suggestion": null
 }
 ```
 
 (Truncated here for brevity; the real output has one entry in
-`findings` per check described above.)
+`findings` per check described above.) `dmarc_suggestion` is an object
+with `record` and `caveat` fields, as shown in the text example above,
+whenever there's a suggestion to make; it's `null`, as here, when the
+current DMARC record already meets the safe minimum.
 
 Every collection field is always an array, never `null` — an SPF record
 with no unresolved hosts serializes `irresolvable_hosts` as `[]`, not

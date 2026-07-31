@@ -42,10 +42,11 @@ func Build(domain string, spfResult spf.SPFResult, dmarcResult *dmarc.DMARCResul
 	findings = append(findings, dmarcFindings(dmarcResult)...)
 
 	return Report{
-		Domain:   domain,
-		SPF:      spfResult,
-		DMARC:    dmarcResult,
-		Findings: findings,
+		Domain:          domain,
+		SPF:             spfResult,
+		DMARC:           dmarcResult,
+		Findings:        findings,
+		DMARCSuggestion: suggestDMARC(domain, dmarcResult),
 	}
 }
 

@@ -313,10 +313,25 @@ type Finding struct {
 // Report é o resultado completo de uma análise, serializável para
 // JSON e para o renderizador de texto.
 type Report struct {
-    Domain   string    `json:"domain"`
-    SPF      SPFResult `json:"spf"`
-    DMARC    DMARCResult `json:"dmarc"`
-    Findings []Finding `json:"findings"`
+    Domain          string           `json:"domain"`
+    SPF             SPFResult        `json:"spf"`
+    DMARC           DMARCResult      `json:"dmarc"`
+    Findings        []Finding        `json:"findings"`
+    DMARCSuggestion *DMARCSuggestion `json:"dmarc_suggestion"`
+}
+
+// DMARCSuggestion é um próximo passo mínimo sugerido para o registro
+// DMARC quando o atual (ou sua ausência) fica abaixo de um mínimo
+// seguro: puramente aditivo quando só falta visibilidade (ex.: rua
+// ausente), ou um aperto mínimo de política (nunca direto para
+// p=reject) quando a política atual é fraca (p=none, pct<100, ou sp
+// efetivamente none). É nil quando o registro atual já atende esse
+// mínimo. Caveat sempre lembra que é sugestão a ser revisada, não uma
+// diretiva, já que a ferramenta não tem visibilidade sobre quais
+// remetentes estão de fato alinhados a SPF/DKIM para aquele domínio.
+type DMARCSuggestion struct {
+    Record string `json:"record"`
+    Caveat string `json:"caveat"`
 }
 ```
 
