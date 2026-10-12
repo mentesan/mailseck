@@ -295,13 +295,24 @@ library. See [PRD.md](PRD.md) §7 for the full architecture rationale.
 This project uses a `Makefile` for the common tasks:
 
 ```
+make check              # the delivery gate: fmt-check, vet, line-length, then test
 make build              # build the mailseck binary
-make test               # run the fast test suite (no network access)
-make test-integration   # also run tests that hit real DNS (see below)
-make lint               # go vet + gofmt -l
+make test               # run the fast test suite with the race detector (no network access)
+make test-integration   # also run tests that hit real DNS (see below); not part of check
+make lint               # fmt-check + vet + line-length, without running tests
+make fmt-check          # fail listing files gofmt would change, or if gofmt is not in PATH
+make vet                # go vet ./...
+make line-length        # fail listing file:line for any .go line above 120 characters
 make clean              # remove the built binary
 make install            # go install .
 ```
+
+`make check` is the single gate a change must pass. `make test` runs
+with `-race`, which needs cgo and a C compiler (on macOS, the Xcode
+Command Line Tools); with `CGO_ENABLED=0` or no compiler it fails rather
+than silently skipping the race detector. `line-length` counts
+characters, not bytes, so a line with multibyte characters such as `§`
+is measured the way an editor shows it, and a tab counts as one.
 
 ### Integration tests
 

@@ -120,7 +120,8 @@ func TestAzureProviderFetch(t *testing.T) {
 					tt.pageHandler(w, r)
 					return
 				}
-				fmt.Fprintf(w, `<html><body><a href="%s/files/ServiceTags_Public_20240101.json">download</a></body></html>`, srv.URL)
+				fmt.Fprintf(w, `<html><body><a href="%s/files/ServiceTags_Public_20240101.json">`+
+					`download</a></body></html>`, srv.URL)
 			})
 			mux.HandleFunc("/files/ServiceTags_Public_20240101.json", func(w http.ResponseWriter, r *http.Request) {
 				if tt.jsonHandler != nil {

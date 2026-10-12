@@ -137,7 +137,8 @@ func TestRecordName(t *testing.T) {
 func TestAnalyzeFullRecord(t *testing.T) {
 	resolver := &fakeResolver{records: map[string][]string{
 		"_dmarc.example.com": {
-			"v=DMARC1; p=reject; sp=quarantine; pct=50; rua=mailto:agg@example.com,mailto:agg2@example.com; ruf=mailto:forensic@example.com",
+			"v=DMARC1; p=reject; sp=quarantine; pct=50; " +
+				"rua=mailto:agg@example.com,mailto:agg2@example.com; ruf=mailto:forensic@example.com",
 		},
 	}}
 

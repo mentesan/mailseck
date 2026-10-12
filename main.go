@@ -120,7 +120,8 @@ func loadCIDRs(
 ) (map[string][]netip.Prefix, error) {
 	cidrs, err := fetch(ctx, cfg)
 	if err != nil {
-		fmt.Fprintf(stderr, "mailseck: warning: could not load cloud provider CIDRs, overlap detection will be skipped: %v\n", err)
+		fmt.Fprintf(stderr, "mailseck: warning: could not load cloud provider CIDRs, "+
+			"overlap detection will be skipped: %v\n", err)
 		cidrs = map[string][]netip.Prefix{}
 	}
 

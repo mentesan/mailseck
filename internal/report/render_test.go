@@ -24,9 +24,18 @@ func sampleReport() Report {
 		},
 		DMARC: &dmarc.DMARCResult{IsPresent: true, Policy: "reject", Percentage: 100},
 		Findings: []Finding{
-			{Code: "spf_record", Severity: Crit, Title: "No SPF record is defined", Detail: "Mail can be easily spoofed.", Items: []string{}},
-			{Code: "spf_hardfail", Severity: Warn, Title: "Directive leaves action ambiguous", Detail: "Ambiguous action.", Items: []string{}},
-			{Code: "dmarc_record", Severity: Info, Title: "DMARC record is defined", Detail: "SPF policy is less ambiguous.", Items: []string{}},
+			{
+				Code: "spf_record", Severity: Crit, Title: "No SPF record is defined", Detail: "Mail can be easily spoofed.",
+				Items: []string{},
+			},
+			{
+				Code: "spf_hardfail", Severity: Warn, Title: "Directive leaves action ambiguous", Detail: "Ambiguous action.",
+				Items: []string{},
+			},
+			{
+				Code: "dmarc_record", Severity: Info, Title: "DMARC record is defined", Detail: "SPF policy is less ambiguous.",
+				Items: []string{},
+			},
 		},
 	}
 }
@@ -75,7 +84,9 @@ func TestRenderTextNoColorHasNoANSICodes(t *testing.T) {
 	if strings.Contains(out, "\033[") {
 		t.Errorf("output contains ANSI escape codes with noColor=true:\n%s", out)
 	}
-	for _, want := range []string{"example.com", "[CRIT]", "[WARN]", "[INFO]", "No SPF record is defined", "Mail can be easily spoofed."} {
+	for _, want := range []string{
+		"example.com", "[CRIT]", "[WARN]", "[INFO]", "No SPF record is defined", "Mail can be easily spoofed.",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output missing %q:\n%s", want, out)
 		}

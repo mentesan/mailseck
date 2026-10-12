@@ -49,7 +49,9 @@ type analyzeState struct {
 // record exists, is absent, or could not be looked up at all is reported
 // in SPFResult.Status instead (see lookup.IsNotFound for the split), so a
 // caller always gets a result it can report on.
-func Analyze(ctx context.Context, resolver Resolver, domain string, cidrs map[string][]netip.Prefix) (SPFResult, error) {
+func Analyze(
+	ctx context.Context, resolver Resolver, domain string, cidrs map[string][]netip.Prefix,
+) (SPFResult, error) {
 	// IrresolvableHosts and Overlaps start as non-nil empty slices, not
 	// nil, so they always serialize to JSON as [] rather than null --
 	// automation consuming the output should never have to special-case

@@ -21,7 +21,8 @@ func TestSuggestDMARCAbsentRecordIsPurelyAdditive(t *testing.T) {
 		t.Errorf("Record = %q, want a rua tag scoped to the analyzed domain", got.Record)
 	}
 	if got.Caveat != baselineCaveat {
-		t.Errorf("Caveat = %q, want only the baseline caveat: a from-scratch p=none record changes no mail handling", got.Caveat)
+		t.Errorf("Caveat = %q, want only the baseline caveat: "+
+			"a from-scratch p=none record changes no mail handling", got.Caveat)
 	}
 }
 
