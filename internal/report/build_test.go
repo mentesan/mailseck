@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/mentesan/mailseck/internal/dmarc"
+	"github.com/mentesan/mailseck/internal/lookup"
 	"github.com/mentesan/mailseck/internal/spf"
 )
 
@@ -386,5 +387,108 @@ func TestBuildFindingItemsIsNeverNil(t *testing.T) {
 		if f.Items == nil {
 			t.Errorf("Finding %q (%s) has nil Items, want a non-nil empty slice", f.Title, f.Code)
 		}
+	}
+}
+
+// findingsWithCodePrefix returns every finding whose Code starts with
+// prefix, e.g. "spf_" or "dmarc_".
+func findingsWithCodePrefix(findings []Finding, prefix string) []Finding {
+	var matched []Finding
+	for _, f := range findings {
+		if strings.HasPrefix(f.Code, prefix) {
+			matched = append(matched, f)
+		}
+	}
+	return matched
+}
+
+func TestBuildLookupErrorIsSingleWarnFinding(t *testing.T) {
+	healthyDMARC := &dmarc.DMARCResult{
+		IsPresent: true, Status: lookup.Found, Policy: "reject", SubdomainPolicy: "reject", Percentage: 100,
+		RUA: []string{"mailto:r@example.com"}, RUF: []string{},
+	}
+	healthySPF := spf.SPFResult{
+		IsPresent: true, Status: lookup.Found, RawRecord: "v=spf1 -all", HasHardFail: true,
+		IrresolvableHosts: []string{}, Overlaps: []spf.Overlap{},
+	}
+
+	tests := []struct {
+		name       string
+		spf        spf.SPFResult
+		dmarc      *dmarc.DMARCResult
+		prefix     string
+		wantCode   string
+		wantTitle  string
+		wantDetail string
+	}{
+		{
+			name: "SPF",
+			spf: spf.SPFResult{
+				Status: lookup.Error, Error: "lookup example.com: i/o timeout",
+				IrresolvableHosts: []string{}, Overlaps: []spf.Overlap{},
+			},
+			dmarc:      healthyDMARC,
+			prefix:     "spf_",
+			wantCode:   codeSPFRecord,
+			wantTitle:  "SPF record could not be verified",
+			wantDetail: "lookup example.com: i/o timeout",
+		},
+		{
+			name: "DMARC",
+			spf:  healthySPF,
+			dmarc: &dmarc.DMARCResult{
+				Status: lookup.Error, Error: "SERVFAIL", RUA: []string{}, RUF: []string{},
+			},
+			prefix:     "dmarc_",
+			wantCode:   codeDMARCRecord,
+			wantTitle:  "DMARC record could not be verified",
+			wantDetail: "SERVFAIL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			report := Build("example.com", tt.spf, tt.dmarc)
+
+			got := findingsWithCodePrefix(report.Findings, tt.prefix)
+			if len(got) != 1 {
+				t.Fatalf("got %d %s findings, want exactly 1: %+v", len(got), tt.prefix, got)
+			}
+			f := got[0]
+			if f.Code != tt.wantCode || f.Severity != Warn || f.Title != tt.wantTitle {
+				t.Errorf("finding = %+v, want code %q, severity warn, title %q", f, tt.wantCode, tt.wantTitle)
+			}
+			if !strings.Contains(f.Detail, tt.wantDetail) {
+				t.Errorf("Detail = %q, want it to contain the lookup error %q", f.Detail, tt.wantDetail)
+			}
+			if f.Items == nil {
+				t.Error("Items is nil, want a non-nil empty slice")
+			}
+		})
+	}
+}
+
+func TestBuildDMARCLookupErrorHasNoSuggestion(t *testing.T) {
+	report := Build("example.com", spf.SPFResult{}, &dmarc.DMARCResult{
+		Status: lookup.Error, Error: "SERVFAIL", RUA: []string{}, RUF: []string{},
+	})
+	if report.DMARCSuggestion != nil {
+		t.Errorf("DMARCSuggestion = %+v, want nil: nothing is known about the record", report.DMARCSuggestion)
+	}
+	if _, ok := findByTitle(report.Findings, "No DMARC record is defined"); ok {
+		t.Error("a failed lookup must not be reported as an absent record")
+	}
+}
+
+func TestSPFAnalysisFinding(t *testing.T) {
+	f := SPFAnalysisFinding(spf.ErrLookupLimitExceeded)
+	if f.Code != codeSPFAnalysis || f.Severity != Crit || f.Title != "SPF analysis could not complete" {
+		t.Errorf("SPFAnalysisFinding() = %+v, want code %q, severity crit", f, codeSPFAnalysis)
+	}
+	if f.Detail != spf.ErrLookupLimitExceeded.Error() {
+		t.Errorf("Detail = %q, want the error message %q", f.Detail, spf.ErrLookupLimitExceeded.Error())
+	}
+	if f.Items == nil {
+		t.Error("Items is nil, want a non-nil empty slice so JSON emits []")
 	}
 }

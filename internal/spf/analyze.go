@@ -7,6 +7,8 @@ import (
 	"math"
 	"net/netip"
 	"strings"
+
+	"github.com/mentesan/mailseck/internal/lookup"
 )
 
 // maxSPFLookups is the maximum number of DNS lookups a valid SPF record
@@ -42,14 +44,17 @@ type analyzeState struct {
 // host; in both cases recursion halts before making the offending DNS
 // query, so it can never loop forever.
 //
-// A domain that publishes no SPF record at all is not an error: the
-// returned SPFResult simply has an empty RawRecord.
+// Those two are the only errors Analyze returns: they describe a broken
+// record, which is what this package exists to detect. Whether the root
+// record exists, is absent, or could not be looked up at all is reported
+// in SPFResult.Status instead (see lookup.IsNotFound for the split), so a
+// caller always gets a result it can report on.
 func Analyze(ctx context.Context, resolver Resolver, domain string, cidrs map[string][]netip.Prefix) (SPFResult, error) {
 	// IrresolvableHosts and Overlaps start as non-nil empty slices, not
 	// nil, so they always serialize to JSON as [] rather than null --
 	// automation consuming the output should never have to special-case
 	// a null collection.
-	result := SPFResult{IrresolvableHosts: []string{}, Overlaps: []Overlap{}}
+	result := SPFResult{Status: lookup.NotFound, IrresolvableHosts: []string{}, Overlaps: []Overlap{}}
 	state := &analyzeState{
 		resolver: resolver,
 		cidrs:    cidrs,
@@ -59,18 +64,41 @@ func Analyze(ctx context.Context, resolver Resolver, domain string, cidrs map[st
 
 	record, found, err := state.fetchSPFRecord(ctx, domain)
 	if err != nil {
-		return result, fmt.Errorf("spf: resolve %s: %w", domain, err)
+		if lookup.IsNotFound(err) {
+			return result, nil
+		}
+		return failedResult(err), nil
 	}
 	if !found {
 		return result, nil
 	}
+	result.IsPresent = true
+	result.Status = lookup.Found
 	result.RawRecord = record
 
 	if err := state.walkRecord(ctx, domain, record, true, false); err != nil {
-		return result, err
+		if errors.Is(err, ErrLookupLimitExceeded) || errors.Is(err, ErrCyclicReference) {
+			return result, err
+		}
+		// Only an expired or canceled context ends the walk otherwise. The
+		// counts gathered so far cover part of the chain at best, so they
+		// are discarded rather than reported as if the record were checked.
+		return failedResult(fmt.Errorf("walk include/redirect chain of %s: %w", domain, err)), nil
 	}
 
 	return result, nil
+}
+
+// failedResult returns the SPFResult for a domain whose SPF record could
+// not be verified: Status lookup.Error with err's message, and every
+// collection a non-nil empty slice.
+func failedResult(err error) SPFResult {
+	return SPFResult{
+		Status:            lookup.Error,
+		Error:             err.Error(),
+		IrresolvableHosts: []string{},
+		Overlaps:          []Overlap{},
+	}
 }
 
 // fetchSPFRecord resolves host's TXT records and returns the one

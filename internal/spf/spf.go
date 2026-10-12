@@ -5,6 +5,8 @@ package spf
 import (
 	"context"
 	"net/netip"
+
+	"github.com/mentesan/mailseck/internal/lookup"
 )
 
 // Resolver abstracts the DNS lookups Analyze needs, letting tests inject a
@@ -39,6 +41,21 @@ type Overlap struct {
 // SPFResult is the outcome of resolving and evaluating a domain's SPF
 // record, including its full include/redirect chain.
 type SPFResult struct {
+	// IsPresent reports whether the domain publishes an SPF record. It is
+	// always equal to Status == lookup.Found.
+	IsPresent bool `json:"is_present"`
+
+	// Status is the outcome of the root TXT lookup: lookup.Found when a
+	// "v=spf1" record was published, lookup.NotFound when the domain has
+	// none, and lookup.Error when the lookup failed and nothing is known.
+	// With any status other than lookup.Found, RawRecord is empty and
+	// every count and collection is left at its empty value.
+	Status lookup.Status `json:"status"`
+
+	// Error is the root lookup's error message when Status is
+	// lookup.Error, and empty otherwise.
+	Error string `json:"error"`
+
 	// RawRecord is the domain's top-level SPF TXT record, as published.
 	RawRecord string `json:"raw_record"`
 

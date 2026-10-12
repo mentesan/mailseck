@@ -88,9 +88,26 @@ mailseck -d <domain> [flags]
 | `--json`            | `false`      | Emit the report as JSON instead of text                               |
 | `--no-color`        | `false`      | Disable ANSI colors even on a terminal                                |
 
-Exit code: `0` if no `crit` finding was raised, `1` if at least one was,
-`2` if the run itself failed (invalid input, a network/DNS failure, or
-a recovered panic) before it could produce a report.
+Exit code:
+
+| Code | Meaning                                                                                       | Report on stdout |
+| ---- | --------------------------------------------------------------------------------------------- | ---------------- |
+| `0`  | Both checks completed and no `crit` finding was raised                                        | yes              |
+| `1`  | Both checks completed and at least one `crit` finding was raised                              | yes              |
+| `2`  | The SPF or DMARC lookup failed (timeout, `SERVFAIL`, expired `--timeout`): `status` is `error` | yes              |
+| `2`  | Invalid input (missing or bad flag, invalid domain or `--custom-ip`) or a recovered panic     | no               |
+
+A domain that publishes no SPF or DMARC record is a `crit` finding
+(exit `1`), not a failed run. Exit `2` is ambiguous on its own: a script
+should always read stdout, and when it holds a report, decide by each
+check's `status` field rather than by the exit code. Every failed lookup
+also writes one line to stderr naming the check, the name queried, and
+the error; a record that is simply absent writes nothing there.
+
+`--timeout` is one budget shared by the whole run, in order: CIDR
+loading, then SPF (including its include/redirect chain), then DMARC. If
+SPF uses it all, DMARC ends with `status` `error` because the deadline
+expired, not because its lookup failed on its own.
 
 ### Examples
 
@@ -174,6 +191,9 @@ $ mailseck -d example.com --json
 {
   "domain": "example.com",
   "spf": {
+    "is_present": true,
+    "status": "found",
+    "error": "",
     "raw_record": "v=spf1 -all",
     "total_ips": 0,
     "total_lookups": 0,
@@ -183,6 +203,8 @@ $ mailseck -d example.com --json
   },
   "dmarc": {
     "is_present": true,
+    "status": "found",
+    "error": "",
     "raw_record": "v=DMARC1;p=reject;sp=reject;adkim=s;aspf=s",
     "policy": "reject",
     "subdomain_policy": "reject",
@@ -209,6 +231,36 @@ with `record` and `caveat` fields, as shown in the text example above,
 whenever there's a suggestion to make; it's `null`, as here, when the
 current DMARC record already meets the safe minimum.
 
+`spf.status` and `dmarc.status` say whether each check could be
+completed, and are what automation should branch on:
+
+| `status`    | Meaning                                                                                      |
+| ----------- | -------------------------------------------------------------------------------------------- |
+| `found`     | The lookup succeeded and a valid record is published                                         |
+| `not_found` | The lookup was answered and no valid record exists (also: zero or several `v=DMARC1` records) |
+| `error`     | The lookup itself failed; nothing is known about the record, and `error` carries the message  |
+
+For both `spf` and `dmarc`, these always hold:
+
+- `is_present` is `true` exactly when `status` is `found`.
+- `error` is a non-empty string exactly when `status` is `error`, and
+  `""` otherwise — never `null`.
+- With any `status` other than `found`, `raw_record` is `""` and every
+  collection is `[]`.
+
+A check with `status` `error` produces a single `warn` finding
+(`spf_record` or `dmarc_record`, titled "... record could not be
+verified") and no other finding for that check; for DMARC,
+`dmarc_suggestion` is also `null`, since there is nothing known to
+suggest from. An SPF record that exceeds the 10-lookup budget or has a
+cyclic include/redirect chain is `found`, and gets a `crit`
+`spf_analysis` finding.
+
+Known limitation: the Go standard library resolver reports a domain
+that does not exist at all (NXDOMAIN) the same way as a domain that
+exists without the record (NODATA), so a non-existent domain shows up as
+SPF and DMARC `not_found`, with both `crit` findings.
+
 Every collection field is always an array, never `null` — an SPF record
 with no unresolved hosts serializes `irresolvable_hosts` as `[]`, not
 `null` — so a script or workflow tool never needs a special case for a
@@ -231,6 +283,7 @@ mailseck/
     spf/          // SPF record resolution, RFC 7208 recursion, and lookup counting
     dmarc/        // DMARC record resolution and tag parsing
     cidr/         // Public cloud provider CIDR ranges, with an on-disk TTL cache
+    lookup/       // DNS lookup outcome (found / not_found / error) shared by spf and dmarc
     report/       // Finding model, rule evaluation (Build), and text/JSON renderers
 ```
 

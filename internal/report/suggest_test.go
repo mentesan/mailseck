@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/mentesan/mailseck/internal/dmarc"
+	"github.com/mentesan/mailseck/internal/lookup"
 	"github.com/mentesan/mailseck/internal/spf"
 )
 
@@ -21,6 +22,13 @@ func TestSuggestDMARCAbsentRecordIsPurelyAdditive(t *testing.T) {
 	}
 	if got.Caveat != baselineCaveat {
 		t.Errorf("Caveat = %q, want only the baseline caveat: a from-scratch p=none record changes no mail handling", got.Caveat)
+	}
+}
+
+func TestSuggestDMARCLookupErrorHasNoSuggestion(t *testing.T) {
+	result := &dmarc.DMARCResult{Status: lookup.Error, Error: "SERVFAIL", RUA: []string{}, RUF: []string{}}
+	if got := suggestDMARC("example.com", result); got != nil {
+		t.Errorf("suggestDMARC() = %+v, want nil when the DMARC lookup failed", got)
 	}
 }
 

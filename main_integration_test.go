@@ -19,7 +19,7 @@ func TestRunIntegrationRealDomains(t *testing.T) {
 	for _, domain := range domains {
 		t.Run(domain, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
-			exitCode := run([]string{"-d", domain, "--timeout", "20s"}, &stdout, &stderr)
+			exitCode := run([]string{"-d", domain, "--timeout", "20s"}, &stdout, &stderr, productionDependencies())
 
 			if exitCode == exitError {
 				t.Fatalf("run() = %d (exitError) for %s, stderr: %s", exitCode, domain, stderr.String())
@@ -37,7 +37,7 @@ func TestRunIntegrationRealDomains(t *testing.T) {
 // produces well-formed, non-empty JSON output and a non-error exit code.
 func TestRunIntegrationJSONOutput(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	exitCode := run([]string{"-d", "gmail.com", "--json", "--timeout", "20s"}, &stdout, &stderr)
+	exitCode := run([]string{"-d", "gmail.com", "--json", "--timeout", "20s"}, &stdout, &stderr, productionDependencies())
 
 	if exitCode == exitError {
 		t.Fatalf("run() = %d (exitError), stderr: %s", exitCode, stderr.String())

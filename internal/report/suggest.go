@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/mentesan/mailseck/internal/dmarc"
+	"github.com/mentesan/mailseck/internal/lookup"
 )
 
 // baselineCaveat is always present on a DMARCSuggestion: it is a
@@ -45,8 +46,13 @@ type DMARCSuggestion struct {
 // reasonable to suggest -- quarantine rather than an outright jump to
 // reject -- since jumping straight to reject without knowing whether
 // every legitimate sender is aligned can silently break mail delivery.
-// A record that already meets this bar gets no suggestion at all.
+// A record that already meets this bar gets no suggestion at all, and
+// neither does a domain whose DMARC lookup failed: nothing is known about
+// its record, so any suggestion would be a guess.
 func suggestDMARC(domain string, result *dmarc.DMARCResult) *DMARCSuggestion {
+	if result != nil && result.Status == lookup.Error {
+		return nil
+	}
 	if result == nil || !result.IsPresent {
 		return &DMARCSuggestion{
 			Record: fmt.Sprintf("v=DMARC1; p=none; rua=mailto:dmarc-reports@%s", domain),

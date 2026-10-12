@@ -4,9 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/netip"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/mentesan/mailseck/internal/lookup"
 )
 
 // fakeResolver is a Resolver backed by fixed per-host records or errors,
@@ -46,13 +50,132 @@ func TestAnalyzeNoSPFRecord(t *testing.T) {
 	}
 }
 
-func TestAnalyzeRootResolutionFailureIsAnError(t *testing.T) {
-	wantErr := errors.New("SERVFAIL")
-	resolver := &fakeResolver{errs: map[string]error{"example.com": wantErr}}
+func TestAnalyzeRootLookupStatus(t *testing.T) {
+	tests := []struct {
+		name       string
+		records    []string
+		err        error
+		wantStatus lookup.Status
+	}{
+		{
+			name:       "record published",
+			records:    []string{"google-site-verification=x", "v=spf1 -all"},
+			wantStatus: lookup.Found,
+		},
+		{
+			name:       "TXT without v=spf1",
+			records:    []string{"google-site-verification=x"},
+			wantStatus: lookup.NotFound,
+		},
+		{
+			name:       "no TXT records at all",
+			records:    nil,
+			wantStatus: lookup.NotFound,
+		},
+		{
+			name:       "name not found",
+			err:        &net.DNSError{Err: "no such host", Name: "example.com", IsNotFound: true},
+			wantStatus: lookup.NotFound,
+		},
+		{
+			name:       "timeout",
+			err:        &net.DNSError{Err: "i/o timeout", Name: "example.com", IsTimeout: true},
+			wantStatus: lookup.Error,
+		},
+		{
+			name:       "generic error",
+			err:        errors.New("SERVFAIL"),
+			wantStatus: lookup.Error,
+		},
+		{
+			name:       "context canceled",
+			err:        context.Canceled,
+			wantStatus: lookup.Error,
+		},
+		{
+			name:       "context deadline exceeded",
+			err:        fmt.Errorf("lookup example.com: %w", context.DeadlineExceeded),
+			wantStatus: lookup.Error,
+		},
+	}
 
-	_, err := Analyze(context.Background(), resolver, "example.com", nil)
-	if !errors.Is(err, wantErr) {
-		t.Fatalf("Analyze() error = %v, want wrapping %v", err, wantErr)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resolver := &fakeResolver{records: map[string][]string{"example.com": tt.records}}
+			if tt.err != nil {
+				resolver.errs = map[string]error{"example.com": tt.err}
+			}
+
+			result, err := Analyze(context.Background(), resolver, "example.com", nil)
+			if err != nil {
+				t.Fatalf("Analyze() unexpected error: %v", err)
+			}
+			if result.Status != tt.wantStatus {
+				t.Fatalf("Status = %q, want %q", result.Status, tt.wantStatus)
+			}
+			assertStatusInvariants(t, result)
+			if tt.wantStatus == lookup.Error && result.Error != tt.err.Error() {
+				t.Errorf("Error = %q, want the lookup error's message %q", result.Error, tt.err.Error())
+			}
+		})
+	}
+}
+
+func TestAnalyzeContextExpiringMidChainIsAnErrorStatus(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	resolver := &cancelingResolver{
+		fakeResolver: fakeResolver{records: map[string][]string{
+			"example.com":   {"v=spf1 ip4:203.0.113.0/24 include:other.example -all"},
+			"other.example": {"v=spf1 -all"},
+		}},
+		cancel: cancel,
+	}
+
+	result, err := Analyze(ctx, resolver, "example.com", nil)
+	if err != nil {
+		t.Fatalf("Analyze() error = %v, want nil: a context failure is reported in Status, not returned", err)
+	}
+	if result.Status != lookup.Error {
+		t.Fatalf("Status = %q, want %q", result.Status, lookup.Error)
+	}
+	if !strings.Contains(result.Error, context.Canceled.Error()) {
+		t.Errorf("Error = %q, want it to mention %q", result.Error, context.Canceled)
+	}
+	assertStatusInvariants(t, result)
+}
+
+// cancelingResolver cancels the analysis context right after answering
+// its first lookup, simulating the --timeout budget running out while the
+// include/redirect chain is still being walked.
+type cancelingResolver struct {
+	fakeResolver
+	cancel context.CancelFunc
+}
+
+func (r *cancelingResolver) LookupTXT(ctx context.Context, host string) ([]string, error) {
+	defer r.cancel()
+	return r.fakeResolver.LookupTXT(ctx, host)
+}
+
+// assertStatusInvariants checks the SPFResult contract tying IsPresent,
+// Error and the record fields to Status.
+func assertStatusInvariants(t *testing.T, result SPFResult) {
+	t.Helper()
+	if result.IsPresent != (result.Status == lookup.Found) {
+		t.Errorf("IsPresent = %v with Status %q", result.IsPresent, result.Status)
+	}
+	if (result.Error != "") != (result.Status == lookup.Error) {
+		t.Errorf("Error = %q with Status %q", result.Error, result.Status)
+	}
+	if result.IrresolvableHosts == nil || result.Overlaps == nil {
+		t.Errorf("IrresolvableHosts/Overlaps = %v/%v, want non-nil slices", result.IrresolvableHosts, result.Overlaps)
+	}
+	if result.Status == lookup.Found {
+		return
+	}
+	if result.RawRecord != "" || result.TotalIPs != 0 || result.TotalLookups != 0 || result.HasHardFail ||
+		len(result.IrresolvableHosts) != 0 || len(result.Overlaps) != 0 {
+		t.Errorf("Status %q with non-empty record fields: %+v", result.Status, result)
 	}
 }
 
@@ -174,6 +297,10 @@ func TestAnalyzeExceedingLookupLimitStops(t *testing.T) {
 	result, err := Analyze(context.Background(), resolver, "root.example", nil)
 	if !errors.Is(err, ErrLookupLimitExceeded) {
 		t.Fatalf("Analyze() error = %v, want wrapping ErrLookupLimitExceeded", err)
+	}
+	if result.Status != lookup.Found || !result.IsPresent {
+		t.Errorf("Status/IsPresent = %q/%v, want found/true: the record exists, it is just broken",
+			result.Status, result.IsPresent)
 	}
 	if result.TotalLookups != 11 {
 		t.Errorf("TotalLookups = %d, want 11 (stops right after exceeding the budget)", result.TotalLookups)

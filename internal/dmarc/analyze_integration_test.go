@@ -20,10 +20,7 @@ func TestAnalyzeIntegrationGmailCom(t *testing.T) {
 	defer cancel()
 
 	resolver := spf.NewDNSResolver()
-	result, err := Analyze(ctx, "gmail.com", resolver)
-	if err != nil {
-		t.Fatalf("Analyze() unexpected error: %v", err)
-	}
+	result := Analyze(ctx, "gmail.com", resolver)
 	if !result.IsPresent {
 		t.Fatal("IsPresent = false, want true: gmail.com is expected to publish a DMARC record")
 	}

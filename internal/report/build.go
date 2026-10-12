@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/mentesan/mailseck/internal/dmarc"
+	"github.com/mentesan/mailseck/internal/lookup"
 	"github.com/mentesan/mailseck/internal/spf"
 )
 
@@ -23,6 +24,7 @@ const maxValidLookups = 10
 // Title/Detail. Automation should always match on Code, never on Title.
 const (
 	codeSPFRecord            = "spf_record"
+	codeSPFAnalysis          = "spf_analysis"
 	codeSPFIPCount           = "spf_ip_count"
 	codeSPFLookupCount       = "spf_lookup_count"
 	codeSPFHostResolution    = "spf_host_resolution"
@@ -57,10 +59,25 @@ func finding(code string, severity Severity, title, detail string) Finding {
 	return Finding{Code: code, Severity: severity, Title: title, Detail: detail, Items: []string{}}
 }
 
+// SPFAnalysisFinding returns the Crit finding for an SPF record whose
+// analysis spf.Analyze had to abort because the record itself is broken:
+// err is spf.ErrLookupLimitExceeded or spf.ErrCyclicReference.
+func SPFAnalysisFinding(err error) Finding {
+	return finding(codeSPFAnalysis, Crit, "SPF analysis could not complete", err.Error())
+}
+
 // spfFindings evaluates a domain's SPF result against the PRD's report
-// rules. A domain with no SPF record at all gets a single Crit finding;
-// every other rule only applies once a record is known to exist.
+// rules. A lookup that failed gets a single Warn finding, since nothing is
+// known about the record; a domain with no SPF record at all gets a single
+// Crit finding; every other rule only applies once a record is known to
+// exist.
 func spfFindings(result spf.SPFResult) []Finding {
+	if result.Status == lookup.Error {
+		return []Finding{finding(codeSPFRecord, Warn, "SPF record could not be verified",
+			fmt.Sprintf("The SPF lookup failed, so whether a record is published is unknown: %s. "+
+				"Re-run the analysis before drawing conclusions.", result.Error))}
+	}
+
 	if result.RawRecord == "" {
 		return []Finding{finding(codeSPFRecord, Crit, "No SPF record is defined",
 			"Mail can be easily spoofed for this domain. Either implement a record, or "+
@@ -161,10 +178,17 @@ func overlapFinding(overlaps []spf.Overlap) Finding {
 }
 
 // dmarcFindings evaluates a domain's DMARC result against the PRD's
-// report rules. A domain with no DMARC record gets a single Crit
-// finding; every other rule only applies once a record is known to
-// exist.
+// report rules. A lookup that failed gets a single Warn finding, since
+// nothing is known about the record; a domain with no DMARC record gets a
+// single Crit finding; every other rule only applies once a record is
+// known to exist.
 func dmarcFindings(result *dmarc.DMARCResult) []Finding {
+	if result != nil && result.Status == lookup.Error {
+		return []Finding{finding(codeDMARCRecord, Warn, "DMARC record could not be verified",
+			fmt.Sprintf("The DMARC lookup failed, so whether a record is published is unknown: %s. "+
+				"Re-run the analysis before drawing conclusions.", result.Error))}
+	}
+
 	if result == nil || !result.IsPresent {
 		return []Finding{finding(codeDMARCRecord, Crit, "No DMARC record is defined",
 			"This can leave the SPF policy ambiguous.")}

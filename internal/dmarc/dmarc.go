@@ -2,15 +2,27 @@
 // absent domain-level email authentication policies.
 package dmarc
 
+import "github.com/mentesan/mailseck/internal/lookup"
+
 // DMARCResult is the outcome of resolving and parsing a domain's DMARC
 // record.
 type DMARCResult struct {
 	// IsPresent reports whether the domain publishes a single, valid
-	// DMARC TXT record. It is false both when _dmarc.<domain> has no
-	// matching record and when the DNS lookup itself failed, since the
-	// overwhelming majority of domains signal "no DMARC" precisely by
-	// not publishing that subdomain at all.
+	// DMARC TXT record. It is always equal to Status == lookup.Found.
 	IsPresent bool `json:"is_present"`
+
+	// Status is the outcome of the _dmarc.<domain> TXT lookup:
+	// lookup.Found for exactly one "v=DMARC1" record, lookup.NotFound
+	// when the name does not exist, has no TXT record, or has zero or
+	// more than one candidate record (invalid per RFC 7489 §6.6.3), and
+	// lookup.Error when the lookup failed and nothing is known. With any
+	// status other than lookup.Found, RawRecord is empty and every tag
+	// field is left at its empty value.
+	Status lookup.Status `json:"status"`
+
+	// Error is the lookup's error message when Status is lookup.Error,
+	// and empty otherwise.
+	Error string `json:"error"`
 
 	// RawRecord is the matched DMARC TXT record, as published.
 	RawRecord string `json:"raw_record"`
