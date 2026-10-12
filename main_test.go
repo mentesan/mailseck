@@ -441,6 +441,7 @@ func TestRunJSONHonorsStatusInvariantsForEveryCombination(t *testing.T) {
 				got := runOffline(resolver, "-d", "example.com", "--json")
 				doc := decodeJSON(t, got.stdout)
 
+				assertToolVersion(t, got.stdout, doc)
 				assertCheckInvariants(t, object(t, doc, "spf"), spfStatus, "irresolvable_hosts", "overlaps")
 				assertCheckInvariants(t, object(t, doc, "dmarc"), dmarcStatus, "rua", "ruf")
 				for _, f := range findings(t, doc) {
@@ -495,4 +496,71 @@ func assertCheckInvariants(t *testing.T, check map[string]any, want lookup.Statu
 	if want != lookup.Found && check["raw_record"] != "" {
 		t.Errorf("raw_record = %#v with status %q, want \"\"", check["raw_record"], status)
 	}
+}
+
+// assertToolVersion checks that the serialized report carries a non-empty
+// top-level tool_version equal to the running binary's version.
+func assertToolVersion(t *testing.T, stdout string, doc map[string]any) {
+	t.Helper()
+	want := fmt.Sprintf(`"tool_version": %q`, version())
+	if version() == "" || !strings.Contains(stdout, want) {
+		t.Errorf("stdout does not contain %s:\n%s", want, stdout)
+	}
+	if v, ok := doc["tool_version"].(string); !ok || v == "" {
+		t.Errorf("tool_version = %#v, want a non-empty string", doc["tool_version"])
+	}
+}
+
+// Criterion 1: --version prints exactly "mailseck <version>" and exits 0.
+func TestRunVersionPrintsVersion(t *testing.T) {
+	got := runOffline(&fakeResolver{}, "--version")
+	if got.code != exitOK {
+		t.Errorf("run() = %d, want %d (exitOK)", got.code, exitOK)
+	}
+	if want := "mailseck " + version() + "\n"; got.stdout != want {
+		t.Errorf("stdout = %q, want %q", got.stdout, want)
+	}
+	if got.stderr != "" {
+		t.Errorf("stderr = %q, want empty", got.stderr)
+	}
+}
+
+// Criterion 2: --version takes precedence; an invalid domain is neither
+// validated nor queried, and no CIDR is loaded.
+func TestRunVersionSkipsDomainValidationAndLookups(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	deps := dependencies{
+		resolver: failingResolver{t},
+		fetchCIDRs: func(context.Context, config) (map[string][]netip.Prefix, error) {
+			t.Error("fetchCIDRs called with --version")
+			return nil, errors.New("unexpected fetch")
+		},
+	}
+
+	code := run([]string{"--version", "-d", "nao valido!"}, &stdout, &stderr, deps)
+	if code != exitOK {
+		t.Errorf("run() = %d, want %d (exitOK), stderr: %s", code, exitOK, stderr.String())
+	}
+	if want := "mailseck " + version() + "\n"; stdout.String() != want {
+		t.Errorf("stdout = %q, want %q", stdout.String(), want)
+	}
+}
+
+// Criterion 3: a flag parsing error still wins over --version.
+func TestRunVersionWithUnknownFlagIsAnError(t *testing.T) {
+	got := runOffline(&fakeResolver{}, "--version", "--flag-inexistente")
+	if got.code != exitError {
+		t.Errorf("run() = %d, want %d (exitError)", got.code, exitError)
+	}
+	if got.stdout != "" {
+		t.Errorf("stdout = %q, want empty", got.stdout)
+	}
+}
+
+// failingResolver fails the test on any lookup.
+type failingResolver struct{ t *testing.T }
+
+func (r failingResolver) LookupTXT(_ context.Context, host string) ([]string, error) {
+	r.t.Errorf("LookupTXT(%q) called, want no DNS lookup", host)
+	return nil, errors.New("unexpected lookup")
 }

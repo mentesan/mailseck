@@ -72,6 +72,19 @@ cd mailseck
 make build
 ```
 
+Releases cut with `make dist` (v1.3.0 onward) attach prebuilt binaries
+for Linux, macOS and Windows, with a `SHA256SUMS` file. Check a download with
+`sha256sum -c SHA256SUMS --ignore-missing` (or `shasum -a 256 -c`), and
+confirm its version with `mailseck --version` or `go version -m
+<binary>`.
+
+`mailseck --version` reports the version the Go toolchain recorded at
+build time: the release tag (e.g. `v1.3.0`) for a release binary or
+`go install ...@v1.3.0`; a Go pseudo-version for a build between tags;
+either with `+dirty` when the checkout had uncommitted changes; and
+`devel` for `go run` or a build without git metadata, such as from a
+source tarball.
+
 ## Usage
 
 ```
@@ -87,6 +100,7 @@ mailseck -d <domain> [flags]
 | `--timeout`         | `30s`        | Overall timeout for the whole analysis (CIDR loading, SPF, and DMARC) |
 | `--json`            | `false`      | Emit the report as JSON instead of text                               |
 | `--no-color`        | `false`      | Disable ANSI colors even on a terminal                                |
+| `--version`         | `false`      | Print `mailseck <version>` and exit 0; `-d` is not required           |
 
 Exit code:
 
@@ -190,6 +204,7 @@ $ mailseck -d example.com --json
 ```json
 {
   "domain": "example.com",
+  "tool_version": "v1.3.0",
   "spf": {
     "is_present": true,
     "status": "found",
@@ -226,7 +241,10 @@ $ mailseck -d example.com --json
 ```
 
 (Truncated here for brevity; the real output has one entry in
-`findings` per check described above.) `dmarc_suggestion` is an object
+`findings` per check described above.) `tool_version` is the version of
+the mailseck binary that produced the report, the same value
+`--version` prints; it is always present and never empty (`devel` at
+worst). `dmarc_suggestion` is an object
 with `record` and `caveat` fields, as shown in the text example above,
 whenever there's a suggestion to make; it's `null`, as here, when the
 current DMARC record already meets the safe minimum.
@@ -303,6 +321,7 @@ make lint               # fmt-check + vet + line-length, without running tests
 make fmt-check          # fail listing files gofmt would change, or if gofmt is not in PATH
 make vet                # go vet ./...
 make line-length        # fail listing file:line for any .go line above 120 characters
+make dist               # release binaries + bin/SHA256SUMS, only at a release tag (see Releasing)
 make clean              # remove the built binary
 make install            # go install .
 ```
@@ -324,6 +343,33 @@ resolve real DNS records for well-known domains (e.g. `gmail.com`,
 ```
 make test-integration
 ```
+
+## Releasing
+
+Releases are cut by hand; `make dist` only builds, it never tags,
+pushes or publishes.
+
+```
+make check
+git tag -a v1.3.0 -m "v1.3.0: <summary>"
+git push origin v1.3.0
+make dist
+gh release create v1.3.0 bin/* --verify-tag --notes-file <notes file>
+```
+
+`make dist` runs `make check` first, then refuses to build unless HEAD
+is exactly at one `vMAJOR.MINOR.PATCH` tag (pre-release tags such as
+`v1.3.0-rc1` are refused) and the working tree is clean, untracked
+files included. It recreates `bin/` with one binary per platform in
+`PLATFORMS` (`CGO_ENABLED=0`, `-trimpath`, `-ldflags="-s -w"`), checks
+with `go version -m` that each one embeds exactly the tag, and writes
+`bin/SHA256SUMS`.
+
+The module path has no `/vN` suffix, so the Go toolchain only accepts
+`v0.x.y` and `v1.x.y` tags as the module version: a `v2.0.0` tag would
+be stamped as a pseudo-version and `make dist` would refuse it. Moving
+to v2 means changing the module path to `github.com/mentesan/mailseck/v2`
+first.
 
 ## Credits and license
 

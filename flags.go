@@ -25,6 +25,7 @@ type config struct {
 	timeout    time.Duration
 	json       bool
 	noColor    bool
+	version    bool
 }
 
 // stringSliceFlag is a flag.Value that accumulates every occurrence of a
@@ -62,11 +63,13 @@ var usageRows = [][2]string{
 	{"--timeout duration", "overall timeout for the whole analysis (default 30s)"},
 	{"--json", "emit the report as JSON instead of text"},
 	{"--no-color", "disable ANSI colors even on a terminal"},
+	{"--version", "print the mailseck version and exit"},
 }
 
 // parseFlags parses args into a config. It returns flag.ErrHelp
 // unchanged when -h/--help was requested, so callers can treat that as
-// a successful exit rather than a usage error.
+// a successful exit rather than a usage error. With --version set, no
+// other flag is required: the caller only prints the version.
 func parseFlags(args []string, output io.Writer) (config, error) {
 	fs := flag.NewFlagSet("mailseck", flag.ContinueOnError)
 	fs.SetOutput(output)
@@ -89,12 +92,17 @@ func parseFlags(args []string, output io.Writer) (config, error) {
 	fs.DurationVar(&cfg.timeout, "timeout", defaultTimeout, "overall timeout for the whole analysis")
 	fs.BoolVar(&cfg.json, "json", false, "emit the report as JSON instead of text")
 	fs.BoolVar(&cfg.noColor, "no-color", false, "disable ANSI colors even on a terminal")
+	fs.BoolVar(&cfg.version, "version", false, "print the mailseck version and exit")
 
 	if err := fs.Parse(args); err != nil {
 		return config{}, err
 	}
 
 	cfg.customIPs = customIPs
+
+	if cfg.version {
+		return cfg, nil
+	}
 
 	if cfg.domain == "" {
 		return config{}, errors.New("missing required flag: -d/--domain")

@@ -134,3 +134,22 @@ func TestParseFlagsHelpMergesAliasesWithoutDuplication(t *testing.T) {
 		t.Errorf("expected the custom-ip flag's two spellings merged onto one line, got:\n%s", out)
 	}
 }
+
+func TestParseFlagsVersionNeedsNoDomain(t *testing.T) {
+	var stderr bytes.Buffer
+	cfg, err := parseFlags([]string{"--version"}, &stderr)
+	if err != nil {
+		t.Fatalf("parseFlags() unexpected error: %v", err)
+	}
+	if !cfg.version {
+		t.Error("cfg.version = false, want true")
+	}
+}
+
+func TestParseFlagsHelpListsVersion(t *testing.T) {
+	var stderr bytes.Buffer
+	parseFlags([]string{"-h"}, &stderr)
+	if !strings.Contains(stderr.String(), "--version") {
+		t.Errorf("help output does not list --version:\n%s", stderr.String())
+	}
+}

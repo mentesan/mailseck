@@ -74,6 +74,13 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) (exitCode i
 		return exitError
 	}
 
+	// --version takes precedence over everything else: the domain is
+	// neither validated nor queried.
+	if cfg.version {
+		fmt.Fprintf(stdout, "mailseck %s\n", version())
+		return exitOK
+	}
+
 	if !validDomain(cfg.domain) {
 		fmt.Fprintf(stderr, "mailseck: invalid domain: %q\n", cfg.domain)
 		return exitError
@@ -96,6 +103,7 @@ func run(args []string, stdout, stderr io.Writer, deps dependencies) (exitCode i
 	dmarcResult := dmarc.Analyze(ctx, cfg.domain, deps.resolver)
 
 	rep := report.Build(cfg.domain, spfResult, dmarcResult)
+	rep.ToolVersion = version()
 	if spfErr != nil {
 		rep.Findings = append([]report.Finding{report.SPFAnalysisFinding(spfErr)}, rep.Findings...)
 	}

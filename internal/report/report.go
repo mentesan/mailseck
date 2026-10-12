@@ -60,6 +60,12 @@ type Report struct {
 	// Domain is the domain that was analyzed.
 	Domain string `json:"domain"`
 
+	// ToolVersion is the version of the mailseck binary that produced the
+	// report: a release tag such as "v1.3.0", a Go pseudo-version, either
+	// with "+dirty", or "devel" for a build with no VCS information. It
+	// lets automation tie a report to the release that generated it.
+	ToolVersion string `json:"tool_version"`
+
 	// SPF is the domain's resolved and evaluated SPF record.
 	SPF spf.SPFResult `json:"spf"`
 
